@@ -4,7 +4,41 @@ Gamified environmental-impact platform. Organizations run real-world events, pla
 check in with a QR code, organizers verify participation, and verified impact turns into
 Eco Points, progression, certificates, and (later) a blockchain achievement.
 
-**Status: Phase 0 — project foundation.** No authentication or business features yet.
+**Status: feature complete except on-chain minting.** Accounts, organizations, events,
+QR check-in, verification, Eco Points, impact dashboards, certificates, and wallet
+linking all work end to end against PostgreSQL. Blockchain minting is still a mock
+adapter — see [Blockchain status](#blockchain-status).
+
+| Area                     | State    | Notes                                                     |
+| ------------------------ | -------- | --------------------------------------------------------- |
+| Auth and sessions        | Done     | Argon2id, rotating refresh tokens, rate limit, audit log    |
+| Organizations            | Done     | Membership, admin approval, `/api/organizations/me/status`  |
+| Events                   | Done     | Draft → published → active lifecycle, capacity, join        |
+| QR check-in              | Done     | Hashed rotatable tokens, one claim per event                |
+| Verification             | Done     | One transaction: points, impact, achievements, certificate  |
+| Eco Points               | Done     | Ledger of transactions; `users.eco_points` is a cache       |
+| Impact dashboards        | Done     | Verified participation only                                 |
+| Certificates             | Done     | Async worker; JSON payload, no PDF render yet               |
+| Progression game         | Done     | Rust → WebAssembly, presentation only                       |
+| Wallet linking           | Done     | Ed25519 ownership proof, Stellar and Solana addresses       |
+| On-chain minting         | **Mock** | No program deployed; no transaction is broadcast            |
+| Web organizer console    | Missing  | Publish, QR, and verify are CLI-only                        |
+| Web certificate view     | Missing  | API routes exist and are unused by the client               |
+
+## Blockchain status
+
+`blockchain/` holds a README and nothing else. No program or contract is written or
+deployed, and the target network is not yet chosen. `MockBlockchainAdapter` returns
+deterministic placeholder identifiers such as `mock-mint-<hash>` with `mock://` explorer
+URLs.
+
+Wallet linking is real cryptography and is independent of the above: the server issues a
+single-use nonce, the wallet signs it, and the server verifies the Ed25519 signature.
+Stellar StrKey and Solana base58 addresses are both accepted, since both use Ed25519 keys.
+This proves the user controls the key. It does not put anything on a ledger.
+
+Do not describe any part of this project as running on-chain until an adapter replaces
+the mock.
 
 ## Requirements
 
@@ -96,7 +130,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\e2e-demo.ps1
 
 Demo asserts approved Butuan Environmental Organization, organizer-created Butuan Coastal Cleanup, QR check-in, Alex receiving exactly 1,000 Eco Points, 12 kg waste impact, Ocean Guardian eligibility, and durable certificate issuance queue. See `docs/demo-fallback.md`, `docs/api.md`, `docs/threat-model.md`, and `docs/backup-restore.md`.
 
-Certificate download/public verification and real Solana minting remain blocked: current code queues certificate issuance and uses a deterministic mock adapter only. Do not present either as live production capability.
+Certificate issuance is asynchronous: verification queues the job and a background worker
+writes the certificate, usually within a second. `GET /api/certificates/public/{hash}`
+then verifies it without authentication. There is no PDF render — the endpoint returns
+JSON. Minting remains mocked; see [Blockchain status](#blockchain-status).
 
 ## Checks
 
@@ -120,7 +157,7 @@ Or, with `make` (Linux/macOS/WSL): `make ci`.
 | `crates/cli`             | Operator CLI (`ecoquest`)                            |
 | `crates/game-wasm`       | Deterministic progression, compiled to WebAssembly   |
 | `web/`                   | React + TypeScript + Vite client                     |
-| `blockchain/`            | Reserved for the Solana program                      |
+| `blockchain/`            | Placeholder; no program written yet                  |
 | `migrations/`            | SQLx migrations, applied at API startup              |
 | `docs/architecture.md`   | Architecture and invariants                          |
 

@@ -18,7 +18,7 @@ crates/api             Axum HTTP transport, composition root
 crates/cli             clap + reqwest operator tool
 crates/game-wasm       deterministic presentation-side progression (WebAssembly)
 web/                   React + TypeScript + Vite client
-blockchain/            reserved for the Solana program
+blockchain/            placeholder; no program written yet
 migrations/            SQLx migrations, applied on API start
 ```
 
@@ -114,3 +114,57 @@ Decisions:
   `session.reuse_detected`. Audit failures are logged, never fail the request.
 - **Seeding**: `cargo run -p ecoquest-cli -- seed` creates one administrator plus
   test accounts; re-running never overwrites an existing account.
+
+## Events, check-in, and verification
+
+Schema: `events`, `event_impacts`, `event_participations`, `event_qr_tokens`,
+`participation_verifications`, `point_transactions`, `impact_contributions`.
+
+An event moves `DRAFT → PUBLISHED → ACTIVE → COMPLETED`, or `CANCELLED` from any earlier
+state; only a published or active event
+accepts joins, and capacity is checked inside the join transaction. QR tokens are stored
+as SHA-256 hashes, expire, and are rotatable; `UNIQUE (event_id, user_id)` means one
+check-in per player per event.
+
+Verification is a single transaction that writes the verification record, flips the
+participation to `VERIFIED`, inserts a point transaction, recomputes `users.eco_points`
+as the sum of that ledger, records impact contributions, advances achievement progress,
+and enqueues one `certificate.issue` outbox row. Recomputing rather than incrementing
+means a replayed request cannot inflate a balance.
+
+Two database constraints carry the money rule: points are zero unless the status is
+`VERIFIED`, and a rejected participation can never hold points.
+
+## Certificates
+
+A worker in the API process claims outbox jobs with `FOR UPDATE SKIP LOCKED`, so several
+instances can run without coordination. It reserves the certificate number and issue
+timestamp, then hashes the length-prefixed concatenation of number, user, event,
+organization, issue time, and verified minutes with SHA-256. Length prefixes keep a value
+from shifting across a field boundary and colliding. The hash is the tamper check: alter
+any field and it no longer matches.
+
+Issuance is idempotent on `participation_id`, and a job whose participation is no longer
+`VERIFIED` is retired instead of issued.
+
+Reads are authorized in SQL: the participant or a member of the hosting organization may
+fetch by participation, and anyone may fetch by verification hash. A caller with no
+relationship receives `404`, not `403`, so the endpoint does not confirm existence.
+
+## Wallet linking
+
+The server issues a single-use nonce valid for five minutes. The wallet signs a fixed
+message containing the address and nonce, and the server verifies the Ed25519 signature.
+Address encoding selects the chain: 56 characters beginning with `G` are decoded as
+Stellar StrKey (base32, version byte `0x30`, CRC16-XModem checksum, rejecting muxed `M`
+and seed `S` prefixes), anything else as Solana base58. Both chains use Ed25519 keys, so a
+single verifier serves both.
+
+This proves key ownership only. `MockBlockchainAdapter` still stands in for minting and
+nothing is broadcast to any network.
+
+## Not built
+
+No blockchain program exists and no target network is chosen. Certificates render as JSON,
+not PDF. Revocation columns exist in the schema without an endpoint. The web client has no
+organizer console and does not yet call the certificate routes.

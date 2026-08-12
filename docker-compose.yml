@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecoquest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ecoquest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecoquest_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ecoquest}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ecoquest_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecoquest} -d ${POSTGRES_DB:-ecoquest}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ecoquest_pgdata:

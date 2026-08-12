@@ -1,0 +1,4 @@
+# Keep LF in the repository; check out native line endings on Windows.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.wasm binary

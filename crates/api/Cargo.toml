@@ -1,0 +1,31 @@
+[package]
+name = "ecoquest-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ecoquest-application = { workspace = true }
+ecoquest-domain = { workspace = true }
+ecoquest-infrastructure = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+axum-extra = { workspace = true }
+chrono = { workspace = true }
+dotenvy = { workspace = true }
+qrcode = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = "0.3"
+tokio = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+serde_json = { workspace = true }

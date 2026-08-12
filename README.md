@@ -1,0 +1,136 @@
+# EcoQuest
+
+Gamified environmental-impact platform. Organizations run real-world events, players
+check in with a QR code, organizers verify participation, and verified impact turns into
+Eco Points, progression, certificates, and (later) a blockchain achievement.
+
+**Status: Phase 0 — project foundation.** No authentication or business features yet.
+
+## Requirements
+
+- Rust stable (1.80+) with `rustfmt` and `clippy`
+- Node.js 20+ and npm
+- Docker with Compose v2
+
+## Setup
+
+### Linux / macOS / WSL
+
+```bash
+cp .env.example .env
+docker compose up -d postgres
+cargo run -p ecoquest-api          # http://localhost:8080
+```
+
+In a second shell:
+
+```bash
+cd web
+npm install
+npm run dev                        # http://localhost:5173
+```
+
+Verify:
+
+```bash
+curl -i http://localhost:8080/api/health
+cargo run -p ecoquest-cli -- health
+```
+
+### Windows (PowerShell, native)
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d postgres
+cargo run -p ecoquest-api          # http://localhost:8080
+```
+
+In a second PowerShell window:
+
+```powershell
+cd web
+npm install
+npm run dev                        # http://localhost:5173
+```
+
+Verify:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/health
+cargo run -p ecoquest-cli -- health
+```
+
+`make` is not available in plain PowerShell; run the underlying `cargo` / `npm` commands
+above, or use WSL for the `make` targets.
+
+## CLI
+
+`ecoquest` is API-only: it never opens a PostgreSQL connection. Set `ECOQUEST_API_URL` or pass `--api-url`; HTTPS is required except `localhost` development URLs. Login stores API session cookies at `%APPDATA%\\EcoQuest\\session.json` on Windows or `$HOME/EcoQuest/session.json` elsewhere. Keep this file private; do not copy it to another API host.
+
+```powershell
+cargo run -p ecoquest-cli -- login --email organizer@ecoquest.test --password 'Example-password-123!'
+cargo run -p ecoquest-cli -- me
+cargo run -p ecoquest-cli -- organizations status
+cargo run -p ecoquest-cli -- events list
+cargo run -p ecoquest-cli -- events create --organization-id <org-uuid> --name 'Beach cleanup' --activity-type BEACH_CLEANUP --location 'North beach' --starts-at '2026-08-13T09:00:00Z' --ends-at '2026-08-13T12:00:00Z' --capacity 50 --eco-points 100
+cargo run -p ecoquest-cli -- events generate-qr <event-uuid>
+cargo run -p ecoquest-cli -- participants <event-uuid>
+cargo run -p ecoquest-cli -- verify <event-uuid> <participation-uuid>
+cargo run -p ecoquest-cli -- certificates issue-status <participation-uuid>
+cargo run -p ecoquest-cli -- stats --json
+```
+
+`verify` asks for confirmation because it awards points and can issue a certificate. Use `--yes` only in reviewed automation. All commands accept global `--json` for scripting; default output is readable key/value tables.
+
+## Competition demo
+
+Development/test only. Reset deletes every local database row. API must be running after reset so it can apply migrations.
+
+```powershell
+$env:APP_ENV='development'
+powershell -ExecutionPolicy Bypass -File .\scripts\reset-demo.ps1 -Force
+cargo run -p ecoquest-api
+# second shell
+powershell -ExecutionPolicy Bypass -File .\scripts\e2e-demo.ps1
+```
+
+Demo asserts approved Butuan Environmental Organization, organizer-created Butuan Coastal Cleanup, QR check-in, Alex receiving exactly 1,000 Eco Points, 12 kg waste impact, Ocean Guardian eligibility, and durable certificate issuance queue. See `docs/demo-fallback.md`, `docs/api.md`, `docs/threat-model.md`, and `docs/backup-restore.md`.
+
+Certificate download/public verification and real Solana minting remain blocked: current code queues certificate issuance and uses a deterministic mock adapter only. Do not present either as live production capability.
+
+## Checks
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cd web && npm run lint && npm run build
+```
+
+Or, with `make` (Linux/macOS/WSL): `make ci`.
+
+## Layout
+
+| Path                     | Purpose                                              |
+| ------------------------ | ---------------------------------------------------- |
+| `crates/domain`          | Pure domain rules, framework free                    |
+| `crates/application`     | Use cases and ports                                  |
+| `crates/infrastructure`  | PostgreSQL adapter, migrations runner                |
+| `crates/api`             | Axum HTTP API, composition root                      |
+| `crates/cli`             | Operator CLI (`ecoquest`)                            |
+| `crates/game-wasm`       | Deterministic progression, compiled to WebAssembly   |
+| `web/`                   | React + TypeScript + Vite client                     |
+| `blockchain/`            | Reserved for the Solana program                      |
+| `migrations/`            | SQLx migrations, applied at API startup              |
+| `docs/architecture.md`   | Architecture and invariants                          |
+
+## Configuration
+
+Copy `.env.example` to `.env`. Only `DATABASE_URL` is required; the rest default to
+development values. The file contains placeholders only — never commit real secrets.
+
+## Troubleshooting
+
+- `/api/health` returns `503` with `"database":"down"` → PostgreSQL is not up yet; check
+  `docker compose ps` and `docker compose logs postgres`.
+- Port 5432 already in use → set `POSTGRES_PORT` in `.env` and update `DATABASE_URL`.

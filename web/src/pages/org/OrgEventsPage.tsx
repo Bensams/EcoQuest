@@ -4,7 +4,8 @@ import { CalendarDays, MapPin, Plus, Users } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { ErrorNote, EmptyState, PageHeader } from '../../components/ui/EmptyState';
+import { ErrorNote, EmptyState } from '../../components/ui/EmptyState';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
 import { activityLabel, formatDateRange, statusToneOf } from '../../lib/format';
 import type { ActivityType, EcoEvent } from '../../lib/types';
@@ -70,7 +71,7 @@ export function OrgEventsPage() {
                   {event.name}
                 </Link>
                 <Badge tone={statusToneOf(event.status)}>{event.status}</Badge>
-                <Badge tone="gray">{activityLabel(event.activity_type)}</Badge>
+                <Badge tone="muted">{activityLabel(event.activity_type)}</Badge>
               </div>
               <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-forest-muted">
                 <span className="inline-flex items-center gap-1.5"><MapPin className="size-3.5" aria-hidden="true" />{event.location}</span>

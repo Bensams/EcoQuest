@@ -4,7 +4,8 @@ import { ArrowLeft, CalendarDays, MapPin } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { EmptyState, PageHeader } from '../../components/ui/EmptyState';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
 import { activityLabel, formatDateRange, statusToneOf } from '../../lib/format';
 import type { EcoEvent } from '../../lib/types';
@@ -49,7 +50,7 @@ export function MissionDetailPage() {
         <Card className="md:col-span-2">
           <div className="mb-4 flex items-center gap-2">
             <Badge tone={statusToneOf(event.status)}>{activityLabel(event.activity_type)}</Badge>
-            <Badge tone="gray">{event.status}</Badge>
+            <Badge tone="muted">{event.status}</Badge>
           </div>
           <div className="mb-4 space-y-2 text-sm text-forest-muted">
             <p className="flex items-center gap-2">

@@ -66,7 +66,6 @@ export function RegisterPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'PLAYER' | 'ORGANIZATION_MEMBER'>('PLAYER');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -75,7 +74,7 @@ export function RegisterPage() {
     setError(null);
     setPending(true);
     try {
-      await register(username, email, password, role);
+      await register(username, email, password);
       navigate('/app/missions', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Account creation failed. Try again.');
@@ -103,28 +102,9 @@ export function RegisterPage() {
             minLength={12}
           />
         </Field>
-        <Field label="I am joining as">
-          <div className="grid grid-cols-2 gap-2">
-            {(['PLAYER', 'ORGANIZATION_MEMBER'] as const).map((option) => (
-              <label
-                key={option}
-                className={`flex cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                  role === option ? 'border-leaf bg-sage-soft text-leaf' : 'border-sage text-forest-muted hover:bg-sage-soft'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="role"
-                  className="sr-only"
-                  checked={role === option}
-                  onChange={() => setRole(option)}
-                />
-                {option === 'PLAYER' ? 'Volunteer' : 'Organization member'}
-              </label>
-            ))}
-          </div>
-          <span className="text-xs text-forest-muted">Admin accounts are granted by the platform, not self-assigned.</span>
-        </Field>
+        <span className="text-xs text-forest-muted">
+          Every account starts as a volunteer. Organization ownership and admin access are granted by EcoQuest after review.
+        </span>
         {error && <ErrorNote message={error} />}
         <Button type="submit" disabled={pending}>
           {pending ? 'Creating account…' : 'Create account'}

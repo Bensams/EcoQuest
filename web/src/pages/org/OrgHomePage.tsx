@@ -1,67 +1,98 @@
-import { Building2, CalendarPlus } from 'lucide-react';
-import { Badge } from '../../components/ui/Badge';
+import { Building2, Plus } from 'lucide-react';
+import { Badge, type BadgeTone } from '../../components/ui/Badge';
 import { ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { EmptyState, PageHeader } from '../../components/ui/EmptyState';
+import { EmptyState, LoadingState } from '../../components/ui/EmptyState';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { useAuth } from '../../lib/auth';
 import type { ImpactStats, OrganizationStatus } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
 
-const verificationBadge: Record<string, { tone: 'green' | 'amber' | 'gray' | 'red'; label: string }> = {
-  APPROVED: { tone: 'green', label: 'Approved' },
-  PENDING: { tone: 'amber', label: 'Pending review' },
-  REJECTED: { tone: 'red', label: 'Rejected' },
-  SUSPENDED: { tone: 'red', label: 'Suspended' },
+const statusCopy: Record<string, { label: string; detail: string }> = {
+  PENDING: {
+    label: 'Pending review',
+    detail: 'Your organization will be reviewed by an EcoQuest administrator. Once approved, you become its owner and gain access to event management.',
+  },
+  APPROVED: {
+    label: 'Approved',
+    detail: 'Your organization is approved. You can create and publish events.',
+  },
+  REJECTED: {
+    label: 'Rejected',
+    detail: 'Your organization application was not approved. Contact an administrator for details.',
+  },
+  SUSPENDED: {
+    label: 'Suspended',
+    detail: 'Your organization is suspended. Event management is paused until it is reviewed.',
+  },
+};
+
+const badgeTone: Record<string, BadgeTone> = {
+  PENDING: 'warning',
+  APPROVED: 'success',
+  REJECTED: 'destructive',
+  SUSPENDED: 'destructive',
 };
 
 export function OrgHomePage() {
   const { user } = useAuth();
-  const { data: memberships, loading, error } = useFetch<OrganizationStatus[]>(
+  const { data: organizations, loading, error } = useFetch<OrganizationStatus[]>(
     user ? '/api/organizations/me/status' : null,
     user?.id,
   );
 
   return (
     <div>
-      <PageHeader eyebrow="Organization" title="My organization" />
-      {!user && <EmptyState title="Sign in to view your organizations" />}
+      <PageHeader
+        eyebrow="Organization"
+        title="My organization"
+        action={
+          <ButtonLink to="/org/create" variant="secondary" size="sm">
+            <Plus className="size-4" aria-hidden="true" />
+            Create organization
+          </ButtonLink>
+        }
+      />
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {loading && <p className="text-sm text-forest-muted">Loading your organizations…</p>}
-
-      {!loading && memberships && memberships.length === 0 && (
+      {loading && <LoadingState label="Loading your organization…" />}
+      {!loading && !error && organizations && organizations.length === 0 && (
         <EmptyState
           title="You are not part of an organization yet"
-          detail="Organizations are reviewed and approved by the platform before members can run events."
+          detail="Create an application and an EcoQuest administrator will review it. Once approved, you become the owner and can run events."
+          action={
+            <ButtonLink to="/org/create" variant="secondary" size="sm">
+              Create organization
+            </ButtonLink>
+          }
         />
       )}
-
       <div className="grid gap-4 md:grid-cols-2">
-        {(memberships ?? []).map((membership) => {
-          const badge = verificationBadge[membership.verification_status];
+        {(organizations ?? []).map((org) => {
+          const copy = statusCopy[org.verification_status] ?? statusCopy.PENDING;
           return (
-            <Card key={membership.organization_id}>
-              <div className="mb-4 flex items-start justify-between gap-3">
+            <Card key={org.organization_id} className="flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="grid size-9 place-items-center rounded-lg bg-sage-soft text-leaf">
                     <Building2 className="size-5" aria-hidden="true" />
                   </span>
-                  <div>
-                    <h2 className="font-semibold text-forest">{membership.name}</h2>
-                    <p className="text-xs text-forest-muted">{membership.member_role}</p>
-                  </div>
+                  <h2 className="font-semibold text-forest">{org.name}</h2>
                 </div>
-                {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
+                <Badge tone={badgeTone[org.verification_status]}>
+                  {copy.label}
+                </Badge>
               </div>
-              <OrgImpact organizationId={membership.organization_id} />
-              <div className="mt-4">
-                <ButtonLink
-                  to={`/org/${membership.organization_id}/events`}
-                  variant="secondary"
-                  size="sm"
-                >
-                  <CalendarPlus className="size-4" aria-hidden="true" /> Manage events
-                </ButtonLink>
-              </div>
+              <p className="text-sm text-forest-muted">{copy.detail}</p>
+              {org.verification_status === 'APPROVED' && (
+                <>
+                  <OrgImpact organizationId={org.organization_id} />
+                  <div className="mt-auto">
+                    <ButtonLink to={`/org/${org.organization_id}/events`} variant="secondary" size="sm">
+                      Manage events
+                    </ButtonLink>
+                  </div>
+                </>
+              )}
             </Card>
           );
         })}

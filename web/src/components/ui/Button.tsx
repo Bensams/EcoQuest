@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { cn } from '../../lib/utils';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'destructive';
 type Size = 'sm' | 'md';
@@ -21,10 +22,16 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
-export function Button({ variant = 'primary', size = 'md', className = '', ...props }: ButtonProps) {
+export function Button({ variant = 'primary', size = 'md', className, ...props }: ButtonProps) {
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`}
+      data-component="button"
+      className={cn(
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        variants[variant],
+        sizes[size],
+        className,
+      )}
       {...props}
     />
   );
@@ -38,11 +45,17 @@ interface ButtonLinkProps {
   children: ReactNode;
 }
 
-export function ButtonLink({ to, variant = 'primary', size = 'md', className = '', children }: ButtonLinkProps) {
+export function ButtonLink({ to, variant = 'primary', size = 'md', className, children }: ButtonLinkProps) {
   return (
     <Link
       to={to}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors ${variants[variant]} ${sizes[size]} ${className}`}
+      data-component="button"
+      className={cn(
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
+        variants[variant],
+        sizes[size],
+        className,
+      )}
     >
       {children}
     </Link>

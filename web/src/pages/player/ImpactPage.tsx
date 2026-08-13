@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Card } from '../../components/ui/Card';
-import { EmptyState, PageHeader } from '../../components/ui/EmptyState';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { StatTile } from '../../components/ui/Card';
 import { useAuth } from '../../lib/auth';
 import type { CommunityGoal, ImpactStats } from '../../lib/types';

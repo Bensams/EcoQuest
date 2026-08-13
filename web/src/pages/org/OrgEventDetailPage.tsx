@@ -109,20 +109,22 @@ export function OrgEventDetailPage() {
         {participants && participants.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-sage text-xs uppercase tracking-wide text-forest-muted">
-                  <th className="py-2 pr-4 font-medium">Player</th>
-                  <th className="py-2 pr-4 font-medium">Status</th>
-                  <th className="py-2 pr-4 font-medium">Registered</th>
-                  <th className="py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-sage">
-                {participants.map((p) => (
-                  <tr key={p.id}>
-                    <td className="py-2.5 pr-4 font-medium text-forest">{p.username ?? p.user_id.slice(0, 8)}</td>
-                    <td className="py-2.5 pr-4"><Badge tone={participationStatusTone(p.status)}>{p.status}</Badge></td>
-                    <td className="py-2.5 pr-4 text-forest-muted">{new Date(p.registered_at).toLocaleString()}</td>
+               <thead>
+                 <tr className="border-b border-sage text-xs uppercase tracking-wide text-forest-muted">
+                   <th className="py-2 pr-4 font-medium">Player</th>
+                   <th className="py-2 pr-4 font-medium">Verification</th>
+                   <th className="py-2 pr-4 font-medium">Registered</th>
+                   <th className="py-2 pr-4 font-medium">Check-in</th>
+                   <th className="py-2 font-medium">Actions</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-sage">
+                 {participants.map((p) => (
+                   <tr key={p.id}>
+                     <td className="py-2.5 pr-4 font-medium text-forest">{p.username ?? p.user_id.slice(0, 8)}</td>
+                     <td className="py-2.5 pr-4">                     <Badge tone={participationStatusTone(p.status)}>{p.status.replace(/_/g, ' ')}</Badge></td>
+                     <td className="py-2.5 pr-4 text-forest-muted">{new Date(p.registered_at).toLocaleString()}</td>
+                     <td className="py-2.5 pr-4 text-forest-muted">{p.checked_in_at ? new Date(p.checked_in_at).toLocaleString() : '—'}</td>
                     <td className="py-2.5">
                       {p.status === 'PENDING_VERIFICATION' ? (
                         <div className="flex gap-2">

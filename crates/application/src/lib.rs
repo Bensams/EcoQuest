@@ -4,6 +4,7 @@
 //! adapters; nothing here may depend on Axum, SQLx or Solana crates.
 
 pub mod achievements;
+pub mod admin;
 pub mod auth;
 pub mod certificates;
 pub mod events;
@@ -12,6 +13,7 @@ pub mod impact;
 pub use achievements::{
     AchievementService, AchievementStore, BlockchainAdapter, MockBlockchainAdapter,
 };
+pub use admin::{AdminOrganization, AdminService, AdminStore, AdminUser};
 pub use auth::{AuthService, AuthStore, PasswordHasherService, TokenService};
 pub use certificates::{
     verification_hash, Certificate, CertificateData, CertificateService, CertificateStore,

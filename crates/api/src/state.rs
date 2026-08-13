@@ -3,8 +3,8 @@
 use std::{net::IpAddr, sync::Arc};
 
 use ecoquest_application::{
-    achievements::AchievementService, auth::AuthService, events::EventService, CertificateService,
-    HealthProbe, ImpactService,
+    achievements::AchievementService, admin::AdminService, auth::AuthService, events::EventService,
+    CertificateService, HealthProbe, ImpactService,
 };
 
 use crate::{auth::rate_limit::RateLimiter, ApiError};
@@ -24,6 +24,8 @@ pub struct AppState {
     pub achievements: Option<Arc<AchievementService>>,
     /// Phase 5 certificate issuance and verification use cases.
     pub certificates: Option<Arc<CertificateService>>,
+    /// Platform administration use cases.
+    pub admin: Option<Arc<AdminService>>,
     /// Rate limiter guarding authentication endpoints.
     pub auth_rate_limiter: Arc<RateLimiter>,
     /// Whether session cookies carry the `Secure` attribute.
@@ -46,6 +48,7 @@ impl AppState {
             impact: None,
             achievements: None,
             certificates: None,
+            admin: None,
             auth_rate_limiter,
             cookies_secure,
         }
@@ -77,6 +80,20 @@ impl AppState {
     pub fn with_certificates(mut self, certificates: Arc<CertificateService>) -> Self {
         self.certificates = Some(certificates);
         self
+    }
+
+    /// Attaches administration use cases.
+    #[must_use]
+    pub fn with_admin(mut self, admin: Arc<AdminService>) -> Self {
+        self.admin = Some(admin);
+        self
+    }
+
+    /// Gets administration use cases or returns a safe configuration error.
+    pub fn admin_service(&self) -> Result<&Arc<AdminService>, ApiError> {
+        self.admin
+            .as_ref()
+            .ok_or_else(|| ApiError::ServiceUnavailable("administration is not configured".into()))
     }
 
     /// Gets certificate use cases or returns a safe configuration error.

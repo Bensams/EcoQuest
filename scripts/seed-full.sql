@@ -7,7 +7,7 @@
 -- Organizations. 10 is already approved (competition flow); 11 is pending so
 -- the admin review UI has something to do.
 -- ---------------------------------------------------------------------------
-INSERT INTO organizations (id, name, organization_type, location, description, verification_status, reviewed_by, reviewed_at)
+INSERT INTO organizations (id, name, organization_type, location, description, verification_status, reviewed_by, reviewed_at, owner_id)
 SELECT '00000000-0000-0000-0000-000000000010',
        'Butuan Environmental Organization',
        'NON_PROFIT',
@@ -15,37 +15,19 @@ SELECT '00000000-0000-0000-0000-000000000010',
        'Competition demonstration organization',
        'APPROVED',
        u.id,
-       now() - interval '30 days'
+       now() - interval '30 days',
+       (SELECT id FROM users WHERE lower(email) = 'organizer@ecoquest.test')
 FROM users u WHERE lower(u.email) = 'admin@ecoquest.test'
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO organizations (id, name, organization_type, location, description)
+INSERT INTO organizations (id, name, organization_type, location, description, owner_id)
 VALUES ('00000000-0000-0000-0000-000000000011',
         'Green Valley Collective',
         'COMMUNITY',
         'Los Baños',
-        'New group awaiting admin review')
+        'New group awaiting admin review',
+        (SELECT id FROM users WHERE lower(email) = 'diego@ecoquest.test'))
 ON CONFLICT (id) DO NOTHING;
-
--- ---------------------------------------------------------------------------
--- Memberships. Organizer owns the approved org; Diego owns the pending one.
--- ---------------------------------------------------------------------------
-INSERT INTO organization_members (organization_id, user_id, member_role)
-SELECT '00000000-0000-0000-0000-000000000010', u.id, 'OWNER'
-FROM users u WHERE lower(u.email) = 'organizer@ecoquest.test'
-ON CONFLICT DO NOTHING;
-INSERT INTO organization_members (organization_id, user_id, member_role)
-SELECT '00000000-0000-0000-0000-000000000010', u.id, 'STAFF'
-FROM users u WHERE lower(u.email) = 'alex@ecoquest.test'
-ON CONFLICT DO NOTHING;
-INSERT INTO organization_members (organization_id, user_id, member_role)
-SELECT '00000000-0000-0000-0000-000000000010', u.id, 'STAFF'
-FROM users u WHERE lower(u.email) = 'maria@ecoquest.test'
-ON CONFLICT DO NOTHING;
-INSERT INTO organization_members (organization_id, user_id, member_role)
-SELECT '00000000-0000-0000-0000-000000000011', u.id, 'OWNER'
-FROM users u WHERE lower(u.email) = 'diego@ecoquest.test'
-ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Events, every lifecycle stage. All authored by the approved org's owner.
@@ -291,17 +273,10 @@ SELECT '00000000-0000-0000-0000-0000000000c2',
 FROM users u WHERE lower(u.email) = 'maria@ecoquest.test'
 ON CONFLICT (id) DO NOTHING;
 
--- Recompute eco_points and level exactly as PgEventStore does.
+-- Recompute eco_points and level exactly as PgEventStore does (30-level curve).
 UPDATE users
 SET eco_points = COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0)::integer,
-    level = CASE
-        WHEN COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0) >= 3000 THEN 6
-        WHEN COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0) >= 1500 THEN 5
-        WHEN COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0) >= 700 THEN 4
-        WHEN COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0) >= 300 THEN 3
-        WHEN COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0) >= 100 THEN 2
-        ELSE 1
-    END
+    level = LEAST((COALESCE((SELECT sum(amount) FROM point_transactions WHERE user_id = users.id), 0) / 100) + 1, 30)
 WHERE id IN (SELECT user_id FROM point_transactions);
 
 -- ---------------------------------------------------------------------------

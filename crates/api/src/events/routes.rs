@@ -77,6 +77,7 @@ struct QrResponse {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/events", get(browse))
+        .route("/api/me/activities", get(my_activities))
         .route(
             "/api/organizations/:organization_id/events",
             get(list_organization_events).post(create),
@@ -103,6 +104,12 @@ async fn browse(
     State(s): State<AppState>,
 ) -> Result<Json<Vec<ecoquest_application::events::Event>>, ApiError> {
     Ok(Json(s.event_service()?.browse().await?))
+}
+async fn my_activities(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Vec<ecoquest_application::events::Activity>>, ApiError> {
+    Ok(Json(s.event_service()?.my_activities(user.id).await?))
 }
 async fn list_organization_events(
     State(s): State<AppState>,

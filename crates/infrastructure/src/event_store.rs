@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use ecoquest_application::{
     events::{
-        CreateEventCommand, Event, EventQrToken, EventStore, Participation, UpdateEventCommand,
-        VerificationResult,
+        Activity, CreateEventCommand, Event, EventQrToken, EventStore, Participation,
+        UpdateEventCommand, VerificationResult,
     },
     AppError, AppResult,
 };
@@ -30,12 +30,13 @@ impl PgEventStore {
 fn db_err(e: sqlx::Error) -> AppError {
     AppError::Infrastructure(e.to_string())
 }
-const EVENT_COLUMNS: &str = "e.id,e.organization_id,e.created_by,e.name,e.description,e.activity_type::text AS activity_type,e.location,e.starts_at,e.ends_at,e.capacity,e.eco_points,e.status::text AS status,(SELECT count(*) FROM participations p WHERE p.event_id=e.id AND p.status <> 'CANCELLED') AS registered_count";
+const EVENT_COLUMNS: &str = "e.id,e.organization_id,o.name AS organization_name,e.created_by,e.name,e.description,e.activity_type::text AS activity_type,e.location,e.starts_at,e.ends_at,e.capacity,e.eco_points,e.status::text AS status,(SELECT count(*) FROM participations p WHERE p.event_id=e.id AND p.status <> 'CANCELLED') AS registered_count";
 
 fn parse_event(row: &sqlx::postgres::PgRow) -> AppResult<Event> {
     Ok(Event {
         id: row.try_get("id").map_err(db_err)?,
         organization_id: row.try_get("organization_id").map_err(db_err)?,
+        organization_name: row.try_get("organization_name").map_err(db_err)?,
         created_by: row.try_get("created_by").map_err(db_err)?,
         name: row.try_get("name").map_err(db_err)?,
         description: row.try_get("description").map_err(db_err)?,
@@ -66,6 +67,20 @@ fn parse_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> 
         user_id: row.try_get("user_id").map_err(db_err)?,
         status: ParticipationStatus::from_str(&row.try_get::<String, _>("status").map_err(db_err)?)
             .map_err(AppError::Domain)?,
+        registered_at: row.try_get("registered_at").map_err(db_err)?,
+        checked_in_at: row.try_get("checked_in_at").map_err(db_err)?,
+    })
+}
+
+fn parse_activity_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> {
+    Ok(Participation {
+        id: row.try_get("participation_id").map_err(db_err)?,
+        event_id: row.try_get("event_id").map_err(db_err)?,
+        user_id: row.try_get("user_id").map_err(db_err)?,
+        status: ParticipationStatus::from_str(
+            &row.try_get::<String, _>("participation_status").map_err(db_err)?,
+        )
+        .map_err(AppError::Domain)?,
         registered_at: row.try_get("registered_at").map_err(db_err)?,
         checked_in_at: row.try_get("checked_in_at").map_err(db_err)?,
     })
@@ -130,7 +145,7 @@ impl EventStore for PgEventStore {
     }
     async fn find_event(&self, id: Uuid) -> AppResult<Option<Event>> {
         let row = sqlx::query(&format!(
-            "SELECT {EVENT_COLUMNS} FROM events e WHERE e.id=$1"
+            "SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.id=$1"
         ))
         .bind(id)
         .fetch_optional(&self.pool)
@@ -144,7 +159,7 @@ impl EventStore for PgEventStore {
         Ok(Some(event))
     }
     async fn list_published_events(&self, now: DateTime<Utc>) -> AppResult<Vec<Event>> {
-        let rows = sqlx::query(&format!("SELECT {EVENT_COLUMNS} FROM events e WHERE e.status='PUBLISHED' AND e.ends_at>$1 ORDER BY e.starts_at")).bind(now).fetch_all(&self.pool).await.map_err(db_err)?;
+        let rows = sqlx::query(&format!("SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.status='PUBLISHED' AND e.ends_at>$1 ORDER BY e.starts_at")).bind(now).fetch_all(&self.pool).await.map_err(db_err)?;
         let mut events = rows
             .iter()
             .map(parse_event)
@@ -156,7 +171,7 @@ impl EventStore for PgEventStore {
     }
     async fn list_organization_events(&self, organization_id: Uuid) -> AppResult<Vec<Event>> {
         let rows = sqlx::query(&format!(
-            "SELECT {EVENT_COLUMNS} FROM events e WHERE e.organization_id=$1 ORDER BY e.starts_at"
+            "SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.organization_id=$1 ORDER BY e.starts_at"
         ))
         .bind(organization_id)
         .fetch_all(&self.pool)
@@ -281,6 +296,29 @@ impl EventStore for PgEventStore {
     }
     async fn find_participation(&self, id: Uuid) -> AppResult<Option<Participation>> {
         sqlx::query("SELECT id,event_id,user_id,status::text AS status,registered_at,checked_in_at FROM participations WHERE id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
+    }
+    async fn list_my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>> {
+        let rows = sqlx::query(&format!(
+            "SELECT p.id AS participation_id,p.event_id,p.user_id,p.status::text AS participation_status,p.registered_at,p.checked_in_at,{EVENT_COLUMNS} \
+             FROM participations p JOIN events e ON e.id=p.event_id JOIN organizations o ON o.id=e.organization_id \
+             WHERE p.user_id=$1 ORDER BY e.starts_at DESC"
+        ))
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
+        let rows2 = rows;
+        let mut activities = Vec::with_capacity(rows2.len());
+        for row in &rows2 {
+            let participation = parse_activity_participation(row)?;
+            let mut event = parse_event(row)?;
+            load_impacts(&self.pool, &mut event).await?;
+            activities.push(Activity {
+                participation,
+                event,
+            });
+        }
+        Ok(activities)
     }
     async fn verify_participation(
         &self,

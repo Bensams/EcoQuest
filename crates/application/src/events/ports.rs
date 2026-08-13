@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 use ecoquest_domain::VerificationStatus;
 use uuid::Uuid;
 
-use super::models::{CreateEventCommand, Event, EventQrToken, Participation, UpdateEventCommand};
+use super::models::{
+    Activity, CreateEventCommand, Event, EventQrToken, Participation, UpdateEventCommand,
+};
 use crate::AppResult;
 
 #[async_trait::async_trait]
@@ -59,6 +61,8 @@ pub trait EventStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> AppResult<Option<Participation>>;
     async fn list_participants(&self, event_id: Uuid) -> AppResult<Vec<Participation>>;
+    /// Lists the user's registrations joined with their events.
+    async fn list_my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>>;
     async fn find_participation(&self, participation_id: Uuid) -> AppResult<Option<Participation>>;
     async fn verify_participation(
         &self,

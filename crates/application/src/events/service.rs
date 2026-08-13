@@ -7,7 +7,9 @@ use ecoquest_domain::{DomainError, EventStatus, VerificationStatus};
 use uuid::Uuid;
 
 use super::{
-    models::{CreateEventCommand, Event, EventQrToken, Participation, UpdateEventCommand},
+    models::{
+        Activity, CreateEventCommand, Event, EventQrToken, Participation, UpdateEventCommand,
+    },
     ports::EventStore,
     qr::{generate_check_in_code, hash_check_in_code},
 };
@@ -199,6 +201,10 @@ impl EventService {
 
     pub async fn browse(&self) -> AppResult<Vec<Event>> {
         self.store.list_published_events(Utc::now()).await
+    }
+    /// Lists the user's registrations joined with their events.
+    pub async fn my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>> {
+        self.store.list_my_activities(user_id).await
     }
     /// Lists every event belonging to an organization the actor owns.
     pub async fn list_for_organization(

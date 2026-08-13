@@ -16,6 +16,7 @@ pub struct EventImpact {
 pub struct Event {
     pub id: Uuid,
     pub organization_id: Uuid,
+    pub organization_name: String,
     pub created_by: Option<Uuid>,
     pub name: String,
     pub description: String,
@@ -38,6 +39,13 @@ pub struct Participation {
     pub status: ParticipationStatus,
     pub registered_at: DateTime<Utc>,
     pub checked_in_at: Option<DateTime<Utc>>,
+}
+
+/// A participation joined with its event, for the logged-in user's activity page.
+#[derive(Debug, Clone, Serialize)]
+pub struct Activity {
+    pub participation: Participation,
+    pub event: Event,
 }
 
 #[derive(Debug, Clone, Serialize)]

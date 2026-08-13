@@ -9,11 +9,12 @@ pub mod auth;
 pub mod certificates;
 pub mod events;
 pub mod impact;
+pub mod organizations;
 
 pub use achievements::{
     AchievementService, AchievementStore, BlockchainAdapter, MockBlockchainAdapter,
 };
-pub use admin::{AdminOrganization, AdminService, AdminStore, AdminUser};
+pub use admin::{AdminEvent, AdminOrganization, AdminService, AdminStore, AdminUser};
 pub use auth::{AuthService, AuthStore, PasswordHasherService, TokenService};
 pub use certificates::{
     verification_hash, Certificate, CertificateData, CertificateService, CertificateStore,
@@ -21,6 +22,9 @@ pub use certificates::{
 };
 pub use events::{EventService, EventStore};
 pub use impact::{ImpactService, ImpactStore};
+pub use organizations::{
+    CreateOrganizationCommand, Organization, OrganizationService, OrganizationStore,
+};
 
 use ecoquest_domain::DomainError;
 

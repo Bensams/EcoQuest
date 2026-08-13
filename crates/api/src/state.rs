@@ -4,7 +4,7 @@ use std::{net::IpAddr, sync::Arc};
 
 use ecoquest_application::{
     achievements::AchievementService, admin::AdminService, auth::AuthService, events::EventService,
-    CertificateService, HealthProbe, ImpactService,
+    organizations::OrganizationService, CertificateService, HealthProbe, ImpactService,
 };
 
 use crate::{auth::rate_limit::RateLimiter, ApiError};
@@ -26,6 +26,8 @@ pub struct AppState {
     pub certificates: Option<Arc<CertificateService>>,
     /// Platform administration use cases.
     pub admin: Option<Arc<AdminService>>,
+    /// Organization application use cases.
+    pub organizations: Option<Arc<OrganizationService>>,
     /// Rate limiter guarding authentication endpoints.
     pub auth_rate_limiter: Arc<RateLimiter>,
     /// Whether session cookies carry the `Secure` attribute.
@@ -49,6 +51,7 @@ impl AppState {
             achievements: None,
             certificates: None,
             admin: None,
+            organizations: None,
             auth_rate_limiter,
             cookies_secure,
         }
@@ -89,11 +92,25 @@ impl AppState {
         self
     }
 
+    /// Attaches organization application use cases.
+    #[must_use]
+    pub fn with_organizations(mut self, organizations: Arc<OrganizationService>) -> Self {
+        self.organizations = Some(organizations);
+        self
+    }
+
     /// Gets administration use cases or returns a safe configuration error.
     pub fn admin_service(&self) -> Result<&Arc<AdminService>, ApiError> {
         self.admin
             .as_ref()
             .ok_or_else(|| ApiError::ServiceUnavailable("administration is not configured".into()))
+    }
+
+    /// Gets organization application use cases or returns a safe configuration error.
+    pub fn organization_service(&self) -> Result<&Arc<OrganizationService>, ApiError> {
+        self.organizations.as_ref().ok_or_else(|| {
+            ApiError::ServiceUnavailable("organizations are not configured".into())
+        })
     }
 
     /// Gets certificate use cases or returns a safe configuration error.

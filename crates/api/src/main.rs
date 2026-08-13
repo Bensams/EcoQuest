@@ -8,11 +8,12 @@ use ecoquest_application::{
     admin::AdminService,
     auth::{AuthService, PasswordHasherService, TokenService},
     events::EventService,
+    organizations::OrganizationService,
     CertificateService, ImpactService,
 };
 use ecoquest_infrastructure::{
     PgAchievementStore, PgAdminStore, PgAuthStore, PgCertificateStore, PgEventStore, PgImpactStore,
-    PgStore,
+    PgOrganizationStore, PgStore,
 };
 
 #[tokio::main]
@@ -45,6 +46,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &store,
     ))));
     let admin = Arc::new(AdminService::new(Arc::new(PgAdminStore::new(&store))));
+    let organizations = Arc::new(OrganizationService::new(Arc::new(PgOrganizationStore::new(
+        &store,
+    ))));
     let worker = achievements.clone();
     tokio::spawn(async move {
         loop {
@@ -79,7 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_impact(Arc::new(impact))
     .with_achievements(achievements)
     .with_certificates(certificates)
-    .with_admin(admin);
+    .with_admin(admin)
+    .with_organizations(organizations);
 
     let app = router(state, &config.cors_allowed_origins);
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;

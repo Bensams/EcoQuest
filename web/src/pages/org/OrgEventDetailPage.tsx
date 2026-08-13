@@ -4,19 +4,12 @@ import { ArrowLeft, Fingerprint, QrCode, RefreshCw } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { EmptyState, ErrorNote, PageHeader } from '../../components/ui/EmptyState';
+import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
-import { activityLabel, formatDateRange, statusToneOf } from '../../lib/format';
+import { activityLabel, formatDateRange, participationStatusTone, statusToneOf } from '../../lib/format';
 import type { EcoEvent, Participation, QrResponse, VerificationBatchResponse } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
-
-const participationTone: Record<Participation['status'], 'gray' | 'amber' | 'green' | 'red' | 'blue'> = {
-  REGISTERED: 'blue',
-  PENDING_VERIFICATION: 'amber',
-  VERIFIED: 'green',
-  REJECTED: 'red',
-  CANCELLED: 'gray',
-};
 
 export function OrgEventDetailPage() {
   const { organizationId, eventId } = useParams<{ organizationId: string; eventId: string }>();
@@ -127,8 +120,8 @@ export function OrgEventDetailPage() {
               <tbody className="divide-y divide-sage">
                 {participants.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-2.5 pr-4 font-medium text-forest">{p.user_id.slice(0, 8)}</td>
-                    <td className="py-2.5 pr-4"><Badge tone={participationTone[p.status]}>{p.status}</Badge></td>
+                    <td className="py-2.5 pr-4 font-medium text-forest">{p.username ?? p.user_id.slice(0, 8)}</td>
+                    <td className="py-2.5 pr-4"><Badge tone={participationStatusTone(p.status)}>{p.status}</Badge></td>
                     <td className="py-2.5 pr-4 text-forest-muted">{new Date(p.registered_at).toLocaleString()}</td>
                     <td className="py-2.5">
                       {p.status === 'PENDING_VERIFICATION' ? (

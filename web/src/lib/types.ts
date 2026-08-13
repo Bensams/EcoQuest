@@ -1,4 +1,4 @@
-export type Role = 'PLAYER' | 'ORGANIZATION_MEMBER' | 'ADMIN';
+export type Role = 'USER' | 'ADMIN';
 
 export type UserProfile = {
   id: string;
@@ -45,6 +45,7 @@ export type ActivityType =
 export type EcoEvent = {
   id: string;
   organization_id: string;
+  organization_name: string;
   created_by: string | null;
   name: string;
   description: string;
@@ -70,6 +71,7 @@ export type Participation = {
   id: string;
   event_id: string;
   user_id: string;
+  username?: string;
   status: ParticipationStatus;
   registered_at: string;
   checked_in_at: string | null;
@@ -78,9 +80,25 @@ export type Participation = {
 export type OrganizationStatus = {
   organization_id: string;
   name: string;
-  member_role: string;
   verification_status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
   reviewed_at: string | null;
+};
+
+export type Organization = {
+  id: string;
+  name: string;
+  organization_type: string;
+  location: string;
+  description: string;
+  verification_status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+  owner_id: string;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export type Activity = {
+  participation: Participation;
+  event: EcoEvent;
 };
 
 export type Achievement = {
@@ -119,8 +137,28 @@ export type AdminOrganization = {
   location: string;
   description: string;
   verification_status: VerificationStatus;
-  member_count: number;
+  owner_id: string | null;
+  owner_username: string | null;
+  event_count: number;
   reviewed_at: string | null;
+  created_at: string;
+};
+
+export type AdminEvent = {
+  id: string;
+  organization_id: string;
+  organization_name: string;
+  owner_username: string;
+  name: string;
+  activity_type: string;
+  location: string;
+  starts_at: string;
+  ends_at: string;
+  status: EventStatus;
+  registered_count: number;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
   created_at: string;
 };
 

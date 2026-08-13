@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Fingerprint, QrCode, RefreshCw } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { DataTable } from '../../components/ui/Table';
 import { Card } from '../../components/ui/Card';
 import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -103,45 +104,53 @@ export function OrgEventDetailPage() {
         <h2 className="mb-3 text-sm font-semibold text-forest">
           Participants ({participants?.length ?? 0})
         </h2>
-        {!participants || (participants.length === 0 && (
+        {!participants || participants.length === 0 ? (
           <EmptyState title="No participants yet" detail="Share the published event so volunteers can join." />
-        ))}
-        {participants && participants.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-               <thead>
-                 <tr className="border-b border-sage text-xs uppercase tracking-wide text-forest-muted">
-                   <th className="py-2 pr-4 font-medium">Player</th>
-                   <th className="py-2 pr-4 font-medium">Verification</th>
-                   <th className="py-2 pr-4 font-medium">Registered</th>
-                   <th className="py-2 pr-4 font-medium">Check-in</th>
-                   <th className="py-2 font-medium">Actions</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-sage">
-                 {participants.map((p) => (
-                   <tr key={p.id}>
-                     <td className="py-2.5 pr-4 font-medium text-forest">{p.username ?? p.user_id.slice(0, 8)}</td>
-                     <td className="py-2.5 pr-4">                     <Badge tone={participationStatusTone(p.status)}>{p.status.replace(/_/g, ' ')}</Badge></td>
-                     <td className="py-2.5 pr-4 text-forest-muted">{new Date(p.registered_at).toLocaleString()}</td>
-                     <td className="py-2.5 pr-4 text-forest-muted">{p.checked_in_at ? new Date(p.checked_in_at).toLocaleString() : '—'}</td>
-                    <td className="py-2.5">
-                      {p.status === 'PENDING_VERIFICATION' ? (
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="secondary" disabled={busy === p.id} onClick={() => void verify(p.id, 'verify')}>Verify</Button>
-                          <Button size="sm" variant="destructive" disabled={busy === p.id} onClick={() => void verify(p.id, 'reject')}>Reject</Button>
-                        </div>
-                      ) : p.status === 'VERIFIED' ? (
-                        <span className="text-xs text-forest-muted">Points already awarded</span>
-                      ) : p.status === 'REGISTERED' ? (
-                        <span className="text-xs text-forest-muted">Awaiting check-in</span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        ) : (
+          <DataTable
+            aria-label="Event participants"
+            columns={[
+              { key: 'player', header: 'Player', isRowHeader: true },
+              { key: 'verification', header: 'Verification' },
+              { key: 'registered', header: 'Registered' },
+              { key: 'checkin', header: 'Check-in' },
+              { key: 'actions', header: 'Actions' },
+            ]}
+            rows={participants}
+            renderCell={(p, key) => {
+              switch (key as string) {
+                case 'player':
+                  return (
+                    <span className="font-medium text-forest">
+                      {p.username ?? p.user_id.slice(0, 8)}
+                    </span>
+                  );
+                case 'verification':
+                  return (
+                    <Badge tone={participationStatusTone(p.status)}>
+                      {p.status.replace(/_/g, ' ')}
+                    </Badge>
+                  );
+                case 'registered':
+                  return <span className="text-forest-muted">{new Date(p.registered_at).toLocaleString()}</span>;
+                case 'checkin':
+                  return <span className="text-forest-muted">{p.checked_in_at ? new Date(p.checked_in_at).toLocaleString() : '—'}</span>;
+                case 'actions':
+                  return p.status === 'PENDING_VERIFICATION' ? (
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="secondary" disabled={busy === p.id} onClick={() => void verify(p.id, 'verify')}>Verify</Button>
+                      <Button size="sm" variant="destructive" disabled={busy === p.id} onClick={() => void verify(p.id, 'reject')}>Reject</Button>
+                    </div>
+                  ) : p.status === 'VERIFIED' ? (
+                    <span className="text-xs text-forest-muted">Points already awarded</span>
+                  ) : p.status === 'REGISTERED' ? (
+                    <span className="text-xs text-forest-muted">Awaiting check-in</span>
+                  ) : null;
+                default:
+                  return null;
+              }
+            }}
+          />
         )}
       </Card>
     </div>

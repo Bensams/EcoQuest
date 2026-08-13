@@ -113,7 +113,12 @@ Decisions:
   `user.login_blocked`, `session.refreshed`, `session.logout`,
   `session.reuse_detected`. Audit failures are logged, never fail the request.
 - **Seeding**: `cargo run -p ecoquest-cli -- seed` creates one administrator plus
-  test accounts; re-running never overwrites an existing account.
+  test accounts, then loads the full demo dataset from `scripts/seed-full.sql`
+  (organizations, events in every lifecycle state, verified participations,
+  point ledger, certificates, and an `OCEAN_GUARDIAN` achievement) in one
+  transaction. Re-running never overwrites existing accounts or data. A clean
+  environment is `make reset`: drops the public schema, applies migrations with
+  `cargo run -p ecoquest-cli -- migrate`, then re-seeds.
 
 ## Events, check-in, and verification
 

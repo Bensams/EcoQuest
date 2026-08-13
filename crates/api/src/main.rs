@@ -46,9 +46,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &store,
     ))));
     let admin = Arc::new(AdminService::new(Arc::new(PgAdminStore::new(&store))));
-    let organizations = Arc::new(OrganizationService::new(Arc::new(PgOrganizationStore::new(
-        &store,
-    ))));
+    let organizations = Arc::new(OrganizationService::new(Arc::new(
+        PgOrganizationStore::new(&store),
+    )));
     let worker = achievements.clone();
     tokio::spawn(async move {
         loop {

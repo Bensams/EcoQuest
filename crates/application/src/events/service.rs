@@ -301,14 +301,12 @@ impl EventService {
             )));
         }
         let event = self.detail(event_id).await?;
-        self.require_owner(event.organization_id, actor_id)
-            .await
+        self.require_owner(event.organization_id, actor_id).await
     }
 
     async fn event_for_organizer(&self, event_id: Uuid, actor_id: Uuid) -> AppResult<Event> {
         let event = self.detail(event_id).await?;
-        self.require_owner(event.organization_id, actor_id)
-            .await?;
+        self.require_owner(event.organization_id, actor_id).await?;
         Ok(event)
     }
 }

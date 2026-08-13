@@ -13,11 +13,7 @@ use qrcode::{render::svg, QrCode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    auth::AuthUser,
-    state::AppState,
-    ApiError,
-};
+use crate::{auth::AuthUser, state::AppState, ApiError};
 
 #[derive(Debug, Deserialize)]
 pub struct EventInput {

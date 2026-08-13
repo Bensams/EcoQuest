@@ -8,7 +8,9 @@ use ecoquest_application::{
     },
     AppError, AppResult,
 };
-use ecoquest_domain::{ActivityType, DomainError, EventStatus, ParticipationStatus, VerificationStatus};
+use ecoquest_domain::{
+    ActivityType, DomainError, EventStatus, ParticipationStatus, VerificationStatus,
+};
 use sqlx::{PgPool, Row};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -78,7 +80,8 @@ fn parse_activity_participation(row: &sqlx::postgres::PgRow) -> AppResult<Partic
         event_id: row.try_get("event_id").map_err(db_err)?,
         user_id: row.try_get("user_id").map_err(db_err)?,
         status: ParticipationStatus::from_str(
-            &row.try_get::<String, _>("participation_status").map_err(db_err)?,
+            &row.try_get::<String, _>("participation_status")
+                .map_err(db_err)?,
         )
         .map_err(AppError::Domain)?,
         registered_at: row.try_get("registered_at").map_err(db_err)?,
@@ -89,7 +92,12 @@ fn parse_activity_participation(row: &sqlx::postgres::PgRow) -> AppResult<Partic
 #[async_trait::async_trait]
 impl EventStore for PgEventStore {
     async fn is_organization_owner(&self, org: Uuid, user: Uuid) -> AppResult<bool> {
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations WHERE id=$1 AND owner_id=$2)").bind(org).bind(user).fetch_one(&self.pool).await.map_err(db_err)
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations WHERE id=$1 AND owner_id=$2)")
+            .bind(org)
+            .bind(user)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(db_err)
     }
     async fn organization_verification_status(
         &self,

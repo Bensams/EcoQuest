@@ -12,8 +12,7 @@ use crate::AppResult;
 #[async_trait::async_trait]
 pub trait EventStore: Send + Sync {
     /// Whether `user_id` owns `organization_id`.
-    async fn is_organization_owner(&self, organization_id: Uuid, user_id: Uuid)
-        -> AppResult<bool>;
+    async fn is_organization_owner(&self, organization_id: Uuid, user_id: Uuid) -> AppResult<bool>;
     /// Review status of an organization, if it exists.
     async fn organization_verification_status(
         &self,

@@ -51,7 +51,11 @@ impl OrganizationService {
         Self { store }
     }
 
-    pub async fn create(&self, command: CreateOrganizationCommand, owner_id: Uuid) -> AppResult<Organization> {
+    pub async fn create(
+        &self,
+        command: CreateOrganizationCommand,
+        owner_id: Uuid,
+    ) -> AppResult<Organization> {
         validate(&command)?;
         self.store.create_organization(command, owner_id).await
     }

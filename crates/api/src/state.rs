@@ -108,9 +108,9 @@ impl AppState {
 
     /// Gets organization application use cases or returns a safe configuration error.
     pub fn organization_service(&self) -> Result<&Arc<OrganizationService>, ApiError> {
-        self.organizations.as_ref().ok_or_else(|| {
-            ApiError::ServiceUnavailable("organizations are not configured".into())
-        })
+        self.organizations
+            .as_ref()
+            .ok_or_else(|| ApiError::ServiceUnavailable("organizations are not configured".into()))
     }
 
     /// Gets certificate use cases or returns a safe configuration error.

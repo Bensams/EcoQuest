@@ -25,10 +25,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/admin/users/:user_id/status", patch(set_user_status))
         .route("/api/admin/events", get(list_events))
         .route("/api/admin/events/:event_id", get(event_detail))
-        .route(
-            "/api/admin/events/:event_id/cancel",
-            post(cancel_event),
-        )
+        .route("/api/admin/events/:event_id/cancel", post(cancel_event))
 }
 
 async fn list_organizations(

@@ -147,7 +147,12 @@ impl AdminService {
             .ok_or_else(|| AppError::Domain(DomainError::NotFound("event".into())))
     }
 
-    pub async fn cancel_event(&self, event_id: Uuid, actor_id: Uuid, reason: &str) -> AppResult<()> {
+    pub async fn cancel_event(
+        &self,
+        event_id: Uuid,
+        actor_id: Uuid,
+        reason: &str,
+    ) -> AppResult<()> {
         if reason.trim().is_empty() {
             return Err(AppError::Domain(DomainError::Validation(
                 "a cancellation reason is required".into(),
@@ -309,12 +314,7 @@ mod tests {
                 event.status = EventStatus::Cancelled;
                 Ok(Some(event))
             }
-            async fn cancel_event(
-                &self,
-                _id: Uuid,
-                _by: Uuid,
-                _reason: &str,
-            ) -> AppResult<bool> {
+            async fn cancel_event(&self, _id: Uuid, _by: Uuid, _reason: &str) -> AppResult<bool> {
                 Ok(true)
             }
         }

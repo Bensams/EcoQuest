@@ -11,6 +11,7 @@ use uuid::Uuid;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/organizations/me/status", get(organization_status))
+        .route("/api/certificates/me", get(list_mine))
         .route(
             "/api/certificates/participations/:participation_id",
             get(mine),
@@ -19,6 +20,14 @@ pub fn routes() -> Router<AppState> {
             "/api/certificates/public/:verification_hash",
             get(public_verify),
         )
+}
+
+/// Returns every certificate issued to the calling user.
+async fn list_mine(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Vec<Certificate>>, ApiError> {
+    Ok(Json(s.certificate_service()?.list_for_user(user.id).await?))
 }
 
 /// Returns the certificate only to the participant or a member of the hosting organization.

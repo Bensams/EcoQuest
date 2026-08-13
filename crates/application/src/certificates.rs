@@ -56,6 +56,8 @@ pub trait CertificateStore: Send + Sync {
     /// Lists organizations the user owns with approval state.
     async fn organization_status(&self, user_id: Uuid)
         -> crate::AppResult<Vec<OrganizationStatus>>;
+    /// Lists every certificate issued to the user, newest first.
+    async fn list_for_user(&self, user_id: Uuid) -> crate::AppResult<Vec<Certificate>>;
 }
 
 /// Certificate issuance and lookup use cases.
@@ -103,6 +105,10 @@ impl CertificateService {
     ) -> crate::AppResult<Vec<OrganizationStatus>> {
         self.store.organization_status(user_id).await
     }
+    /// Lists every certificate issued to the user, newest first.
+    pub async fn list_for_user(&self, user_id: Uuid) -> crate::AppResult<Vec<Certificate>> {
+        self.store.list_for_user(user_id).await
+    }
 }
 
 /// Parses a 32-byte hash from lowercase hex, rejecting any other shape.
@@ -146,7 +152,51 @@ pub fn verification_hash(data: &CertificateData) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+
+    /// In-memory [`CertificateStore`] for service-level tests.
+    struct FakeStore {
+        issued: Vec<Certificate>,
+    }
+
+    #[async_trait::async_trait]
+    impl CertificateStore for FakeStore {
+        async fn issue_next_queued(&self) -> crate::AppResult<bool> {
+            Ok(false)
+        }
+        async fn find_for_requester(
+            &self,
+            _participation_id: Uuid,
+            _requester_id: Uuid,
+        ) -> crate::AppResult<Option<Certificate>> {
+            Ok(None)
+        }
+        async fn find_by_hash(
+            &self,
+            _verification_hash: &[u8],
+        ) -> crate::AppResult<Option<Certificate>> {
+            Ok(None)
+        }
+        async fn organization_status(
+            &self,
+            _user_id: Uuid,
+        ) -> crate::AppResult<Vec<OrganizationStatus>> {
+            Ok(Vec::new())
+        }
+        async fn list_for_user(&self, user_id: Uuid) -> crate::AppResult<Vec<Certificate>> {
+            let mut owned: Vec<Certificate> = self
+                .issued
+                .iter()
+                .filter(|c| c.user_id == user_id)
+                .cloned()
+                .collect();
+            owned.sort_by_key(|c| std::cmp::Reverse(c.issued_at));
+            Ok(owned)
+        }
+    }
+
     #[test]
     fn hash_hex_round_trips_and_rejects_malformed_input() {
         let bytes = [0x0au8; 32];
@@ -173,5 +223,59 @@ mod tests {
         let hash = verification_hash(&data);
         data.volunteer_duration_minutes = 61;
         assert_ne!(hash, verification_hash(&data));
+    }
+
+    #[tokio::test]
+    async fn list_for_user_returns_only_owned_certificates_sorted_by_issue_date() {
+        let user = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let oldest = Certificate {
+            certificate_number: "ECO-2026-000001".into(),
+            participation_id: Uuid::new_v4(),
+            user_id: user,
+            event_id: Uuid::new_v4(),
+            event_name: "Beach cleanup".into(),
+            organization_name: "Green Earth".into(),
+            participant_name: "Alex".into(),
+            issued_at: Utc::now() - chrono::Duration::days(10),
+            volunteer_duration_minutes: 120,
+            verification_hash: "a".repeat(64),
+            status: "ISSUED".into(),
+        };
+        let newest = Certificate {
+            certificate_number: "ECO-2026-000002".into(),
+            participation_id: Uuid::new_v4(),
+            user_id: user,
+            event_id: Uuid::new_v4(),
+            event_name: "Tree planting".into(),
+            organization_name: "Green Earth".into(),
+            participant_name: "Alex".into(),
+            issued_at: Utc::now(),
+            volunteer_duration_minutes: 180,
+            verification_hash: "b".repeat(64),
+            status: "ISSUED".into(),
+        };
+        let foreign = Certificate {
+            certificate_number: "ECO-2026-000003".into(),
+            participation_id: Uuid::new_v4(),
+            user_id: other,
+            event_id: Uuid::new_v4(),
+            event_name: "Other cleanup".into(),
+            organization_name: "Other org".into(),
+            participant_name: "Diego".into(),
+            issued_at: Utc::now(),
+            volunteer_duration_minutes: 60,
+            verification_hash: "c".repeat(64),
+            status: "ISSUED".into(),
+        };
+        let store = FakeStore {
+            issued: vec![oldest, newest, foreign],
+        };
+        let service = CertificateService::new(Arc::new(store));
+        let result = service.list_for_user(user).await.expect("list");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].certificate_number, "ECO-2026-000002");
+        assert_eq!(result[1].certificate_number, "ECO-2026-000001");
+        assert!(result.iter().all(|c| c.user_id == user));
     }
 }

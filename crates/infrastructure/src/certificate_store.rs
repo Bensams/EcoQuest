@@ -204,4 +204,16 @@ impl CertificateStore for PgCertificateStore {
             })
             .collect()
     }
+
+    async fn list_for_user(&self, user_id: Uuid) -> AppResult<Vec<Certificate>> {
+        let sql = format!("{SELECT_CERTIFICATE} WHERE c.user_id=$1 ORDER BY c.issued_at DESC");
+        sqlx::query(&sql)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db_err)?
+            .iter()
+            .map(row_to_certificate)
+            .collect()
+    }
 }

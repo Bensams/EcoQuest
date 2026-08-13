@@ -36,6 +36,7 @@ pub struct Participation {
     pub id: Uuid,
     pub event_id: Uuid,
     pub user_id: Uuid,
+    pub username: Option<String>,
     pub status: ParticipationStatus,
     pub registered_at: DateTime<Utc>,
     pub checked_in_at: Option<DateTime<Utc>>,

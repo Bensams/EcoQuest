@@ -67,6 +67,7 @@ fn parse_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> 
         id: row.try_get("id").map_err(db_err)?,
         event_id: row.try_get("event_id").map_err(db_err)?,
         user_id: row.try_get("user_id").map_err(db_err)?,
+        username: row.try_get("username").map_err(db_err)?,
         status: ParticipationStatus::from_str(&row.try_get::<String, _>("status").map_err(db_err)?)
             .map_err(AppError::Domain)?,
         registered_at: row.try_get("registered_at").map_err(db_err)?,
@@ -79,6 +80,7 @@ fn parse_activity_participation(row: &sqlx::postgres::PgRow) -> AppResult<Partic
         id: row.try_get("participation_id").map_err(db_err)?,
         event_id: row.try_get("event_id").map_err(db_err)?,
         user_id: row.try_get("user_id").map_err(db_err)?,
+        username: row.try_get("username").map_err(db_err)?,
         status: ParticipationStatus::from_str(
             &row.try_get::<String, _>("participation_status")
                 .map_err(db_err)?,
@@ -300,15 +302,25 @@ impl EventStore for PgEventStore {
         r.map(|r| parse_participation(&r)).transpose()
     }
     async fn list_participants(&self, event_id: Uuid) -> AppResult<Vec<Participation>> {
-        sqlx::query("SELECT id,event_id,user_id,status::text AS status,registered_at,checked_in_at FROM participations WHERE event_id=$1 ORDER BY registered_at").bind(event_id).fetch_all(&self.pool).await.map_err(db_err)?.iter().map(parse_participation).collect()
+        sqlx::query(
+            "SELECT p.id,p.event_id,p.user_id,u.username,p.status::text AS status,p.registered_at,p.checked_in_at \
+             FROM participations p JOIN users u ON u.id=p.user_id WHERE p.event_id=$1 ORDER BY p.registered_at",
+        )
+        .bind(event_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?
+        .iter()
+        .map(parse_participation)
+        .collect()
     }
     async fn find_participation(&self, id: Uuid) -> AppResult<Option<Participation>> {
         sqlx::query("SELECT id,event_id,user_id,status::text AS status,registered_at,checked_in_at FROM participations WHERE id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
     }
     async fn list_my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>> {
         let rows = sqlx::query(&format!(
-            "SELECT p.id AS participation_id,p.event_id,p.user_id,p.status::text AS participation_status,p.registered_at,p.checked_in_at,{EVENT_COLUMNS} \
-             FROM participations p JOIN events e ON e.id=p.event_id JOIN organizations o ON o.id=e.organization_id \
+            "SELECT p.id AS participation_id,p.event_id,p.user_id,u.username,p.status::text AS participation_status,p.registered_at,p.checked_in_at,{EVENT_COLUMNS} \
+             FROM participations p JOIN events e ON e.id=p.event_id JOIN organizations o ON o.id=e.organization_id JOIN users u ON u.id=p.user_id \
              WHERE p.user_id=$1 ORDER BY e.starts_at DESC"
         ))
         .bind(user_id)

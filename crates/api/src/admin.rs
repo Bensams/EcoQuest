@@ -3,7 +3,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, patch},
+    routing::{get, patch, post},
     Json, Router,
 };
 use ecoquest_domain::{Role, UserStatus, VerificationStatus};
@@ -23,6 +23,12 @@ pub fn router() -> Router<AppState> {
         .route("/api/admin/users", get(list_users))
         .route("/api/admin/users/:user_id/role", patch(set_user_role))
         .route("/api/admin/users/:user_id/status", patch(set_user_status))
+        .route("/api/admin/events", get(list_events))
+        .route("/api/admin/events/:event_id", get(event_detail))
+        .route(
+            "/api/admin/events/:event_id/cancel",
+            post(cancel_event),
+        )
 }
 
 async fn list_organizations(
@@ -90,6 +96,38 @@ async fn set_user_status(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn list_events(
+    State(s): State<AppState>,
+    _admin: AdminUser,
+) -> Result<Json<Vec<ecoquest_application::AdminEvent>>, ApiError> {
+    Ok(Json(s.admin_service()?.list_events().await?))
+}
+
+async fn event_detail(
+    State(s): State<AppState>,
+    _admin: AdminUser,
+    Path(event_id): Path<Uuid>,
+) -> Result<Json<ecoquest_application::AdminEvent>, ApiError> {
+    Ok(Json(s.admin_service()?.find_event(event_id).await?))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CancelEventInput {
+    pub reason: String,
+}
+
+async fn cancel_event(
+    State(s): State<AppState>,
+    AdminUser(actor): AdminUser,
+    Path(event_id): Path<Uuid>,
+    Json(input): Json<CancelEventInput>,
+) -> Result<StatusCode, ApiError> {
+    s.admin_service()?
+        .cancel_event(event_id, actor.id, &input.reason)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +144,12 @@ mod tests {
         let json = r#"{"status":"APPROVED"}"#;
         let input: StatusInput = serde_json::from_str(json).expect("parse");
         assert_eq!(input.status, VerificationStatus::Approved);
+    }
+
+    #[test]
+    fn cancel_event_input_deserializes() {
+        let json = r#"{"reason":"safety concern"}"#;
+        let input: CancelEventInput = serde_json::from_str(json).expect("parse");
+        assert_eq!(input.reason, "safety concern");
     }
 }

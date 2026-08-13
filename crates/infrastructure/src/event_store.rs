@@ -8,7 +8,7 @@ use ecoquest_application::{
     },
     AppError, AppResult,
 };
-use ecoquest_domain::{ActivityType, DomainError, EventStatus, ParticipationStatus};
+use ecoquest_domain::{ActivityType, DomainError, EventStatus, ParticipationStatus, VerificationStatus};
 use sqlx::{PgPool, Row};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -73,8 +73,25 @@ fn parse_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> 
 
 #[async_trait::async_trait]
 impl EventStore for PgEventStore {
-    async fn is_organization_member(&self, org: Uuid, user: Uuid) -> AppResult<bool> {
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organization_members WHERE organization_id=$1 AND user_id=$2)").bind(org).bind(user).fetch_one(&self.pool).await.map_err(db_err)
+    async fn is_organization_owner(&self, org: Uuid, user: Uuid) -> AppResult<bool> {
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations WHERE id=$1 AND owner_id=$2)").bind(org).bind(user).fetch_one(&self.pool).await.map_err(db_err)
+    }
+    async fn organization_verification_status(
+        &self,
+        organization_id: Uuid,
+    ) -> AppResult<Option<VerificationStatus>> {
+        let row = sqlx::query("SELECT verification_status::text AS verification_status FROM organizations WHERE id=$1")
+            .bind(organization_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db_err)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let status: String = row.try_get("verification_status").map_err(db_err)?;
+        Ok(Some(
+            VerificationStatus::from_str(&status).map_err(AppError::Domain)?,
+        ))
     }
     async fn create_event(&self, c: CreateEventCommand, actor: Uuid) -> AppResult<Event> {
         let impacts = c.impacts.clone();
@@ -285,7 +302,7 @@ impl EventStore for PgEventStore {
         sqlx::query("INSERT INTO participation_verifications (participation_id,verifier_id,decision,reason) VALUES ($1,$2,'VERIFIED',$3)").bind(id).bind(verifier).bind(reason).execute(&mut *tx).await.map_err(db_err)?;
         sqlx::query("UPDATE participations SET status='VERIFIED',verified_by=$2,verified_at=now(),points_awarded=$3 WHERE id=$1").bind(id).bind(verifier).bind(points).execute(&mut *tx).await.map_err(db_err)?;
         sqlx::query("INSERT INTO point_transactions (user_id,participation_id,amount,reason,created_by) VALUES ($1,$2,$3,$4,$5)").bind(user_id).bind(id).bind(points).bind("verified event participation").bind(verifier).execute(&mut *tx).await.map_err(db_err)?;
-        let player = sqlx::query("UPDATE users SET eco_points=(SELECT COALESCE(sum(amount),0)::integer FROM point_transactions WHERE user_id=$1), level=CASE WHEN (SELECT COALESCE(sum(amount),0) FROM point_transactions WHERE user_id=$1)>=3000 THEN 6 WHEN (SELECT COALESCE(sum(amount),0) FROM point_transactions WHERE user_id=$1)>=1500 THEN 5 WHEN (SELECT COALESCE(sum(amount),0) FROM point_transactions WHERE user_id=$1)>=700 THEN 4 WHEN (SELECT COALESCE(sum(amount),0) FROM point_transactions WHERE user_id=$1)>=300 THEN 3 WHEN (SELECT COALESCE(sum(amount),0) FROM point_transactions WHERE user_id=$1)>=100 THEN 2 ELSE 1 END WHERE id=$1 RETURNING eco_points,level").bind(user_id).fetch_one(&mut *tx).await.map_err(db_err)?;
+        let player = sqlx::query("UPDATE users SET eco_points=(SELECT COALESCE(sum(amount),0)::integer FROM point_transactions WHERE user_id=$1), level=LEAST((SELECT COALESCE(sum(amount),0) FROM point_transactions WHERE user_id=$1)/100 + 1, 30) WHERE id=$1 RETURNING eco_points,level").bind(user_id).fetch_one(&mut *tx).await.map_err(db_err)?;
         // Each definition is a per-person contribution. One verified participation
         // inserts one row; no whole-event total is multiplied by attendance.
         sqlx::query("INSERT INTO impact_contributions (participation_id,event_id,metric,unit,value,source,verifier_id,attribution_method) SELECT $1,$2,metric,unit,expected_value,'EVENT_IMPACT_DEFINITION',$3,'INDIVIDUAL_CONTRIBUTION' FROM event_impact_definitions WHERE event_id=$2").bind(id).bind(event_id).bind(verifier).execute(&mut *tx).await.map_err(db_err)?;

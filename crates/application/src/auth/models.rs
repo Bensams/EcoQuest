@@ -66,7 +66,8 @@ impl From<User> for UserProfile {
     }
 }
 
-/// Validated registration input.
+/// Validated registration input. Every new account is a regular `USER`;
+/// other roles are granted, never requested at registration.
 #[derive(Debug)]
 pub struct RegisterCommand {
     /// Desired username.
@@ -75,8 +76,6 @@ pub struct RegisterCommand {
     pub email: EmailAddress,
     /// Plaintext password meeting policy.
     pub password: Password,
-    /// Requested role; must be self-assignable.
-    pub role: Role,
 }
 
 /// Validated login input.

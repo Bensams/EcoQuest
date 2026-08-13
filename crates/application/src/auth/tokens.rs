@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn tokens_signed_with_another_secret_are_rejected() {
         let token = service()
-            .issue_access_token(Uuid::new_v4(), Role::Player)
+            .issue_access_token(Uuid::new_v4(), Role::User)
             .expect("issue");
         let other = TokenService::new(&[9u8; 32], 900, 900).expect("service");
         assert!(other.verify_access_token(&token).is_err());
@@ -155,7 +155,7 @@ mod tests {
     fn expired_access_tokens_are_rejected() {
         let svc = TokenService::new(&[7u8; 32], -1, 900).expect("service");
         let token = svc
-            .issue_access_token(Uuid::new_v4(), Role::Player)
+            .issue_access_token(Uuid::new_v4(), Role::User)
             .expect("issue");
         assert!(svc.verify_access_token(&token).is_err());
     }

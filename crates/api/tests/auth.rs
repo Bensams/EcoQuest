@@ -128,7 +128,7 @@ async fn registration_creates_a_session_in_httponly_cookies() {
 
     assert_eq!(res.status, StatusCode::CREATED);
     assert_eq!(res.body["user"]["email"], "player@example.com");
-    assert_eq!(res.body["user"]["role"], "PLAYER");
+    assert_eq!(res.body["user"]["role"], "USER");
     assert!(res.body["user"]["password_hash"].is_null());
     // Tokens must never reach JavaScript.
     assert!(res.body.get("access_token").is_none());
@@ -180,12 +180,13 @@ async fn invalid_registration_input_is_rejected() {
 }
 
 #[tokio::test]
-async fn admin_role_cannot_be_self_assigned() {
+async fn requested_role_is_ignored_and_always_user() {
     let (app, _) = test_app(100, 900);
     let mut body = registration("sneaky@example.com", "sneaky_user");
     body["role"] = json!("ADMIN");
     let res = call(&app, post("/api/auth/register", &body)).await;
-    assert_eq!(res.status, StatusCode::FORBIDDEN);
+    assert_eq!(res.status, StatusCode::CREATED);
+    assert_eq!(res.body["user"]["role"], "USER");
 }
 
 #[tokio::test]

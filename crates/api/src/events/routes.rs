@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    auth::{AuthUser, OrganizationUser},
+    auth::AuthUser,
     state::AppState,
     ApiError,
 };
@@ -106,7 +106,7 @@ async fn browse(
 }
 async fn list_organization_events(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(organization_id): Path<Uuid>,
 ) -> Result<Json<Vec<ecoquest_application::events::Event>>, ApiError> {
     Ok(Json(
@@ -123,7 +123,7 @@ async fn detail(
 }
 async fn create(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(organization_id): Path<Uuid>,
     Json(v): Json<EventInput>,
 ) -> Result<(StatusCode, Json<ecoquest_application::events::Event>), ApiError> {
@@ -146,7 +146,7 @@ async fn create(
 }
 async fn update(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
     Json(v): Json<UpdateInput>,
 ) -> Result<Json<ecoquest_application::events::Event>, ApiError> {
@@ -165,7 +165,7 @@ async fn update(
 }
 async fn publish(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     s.event_service()?.publish(id, user.id).await?;
@@ -173,7 +173,7 @@ async fn publish(
 }
 async fn activate(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     s.event_service()?.activate(id, user.id).await?;
@@ -181,7 +181,7 @@ async fn activate(
 }
 async fn cancel(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     s.event_service()?.cancel(id, user.id).await?;
@@ -205,14 +205,14 @@ async fn join(
 }
 async fn participants(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ecoquest_application::events::Participation>>, ApiError> {
     Ok(Json(s.event_service()?.participants(id, user.id).await?))
 }
 async fn verify_participants(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(event_id): Path<Uuid>,
     Json(input): Json<VerificationInput>,
 ) -> Result<Json<VerificationBatchResponse>, ApiError> {
@@ -233,7 +233,7 @@ async fn verify_participants(
 }
 async fn reject_participants(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(event_id): Path<Uuid>,
     Json(input): Json<VerificationInput>,
 ) -> Result<Json<VerificationBatchResponse>, ApiError> {
@@ -254,7 +254,7 @@ async fn reject_participants(
 }
 async fn rotate_qr(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
     Json(v): Json<QrInput>,
 ) -> Result<Json<QrResponse>, ApiError> {

@@ -1,6 +1,7 @@
 //! Persistence port for mission use cases.
 
 use chrono::{DateTime, Utc};
+use ecoquest_domain::VerificationStatus;
 use uuid::Uuid;
 
 use super::models::{CreateEventCommand, Event, EventQrToken, Participation, UpdateEventCommand};
@@ -8,8 +9,14 @@ use crate::AppResult;
 
 #[async_trait::async_trait]
 pub trait EventStore: Send + Sync {
-    async fn is_organization_member(&self, organization_id: Uuid, user_id: Uuid)
+    /// Whether `user_id` owns `organization_id`.
+    async fn is_organization_owner(&self, organization_id: Uuid, user_id: Uuid)
         -> AppResult<bool>;
+    /// Review status of an organization, if it exists.
+    async fn organization_verification_status(
+        &self,
+        organization_id: Uuid,
+    ) -> AppResult<Option<VerificationStatus>>;
     async fn create_event(&self, command: CreateEventCommand, actor_id: Uuid) -> AppResult<Event>;
     async fn update_event(
         &self,

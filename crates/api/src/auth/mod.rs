@@ -4,6 +4,6 @@ pub mod extract;
 pub mod rate_limit;
 pub mod routes;
 
-pub use extract::{AdminUser, AuthUser, OrganizationUser, ACCESS_COOKIE, REFRESH_COOKIE};
+pub use extract::{AdminUser, AuthUser, ACCESS_COOKIE, REFRESH_COOKIE};
 pub use rate_limit::RateLimiter;
 pub use routes::routes;

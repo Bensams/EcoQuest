@@ -67,20 +67,17 @@ impl AuthService {
 
     /// Registers a new account and opens a session for it.
     ///
+    /// Every registration creates a regular `USER` account; roles are granted,
+    /// never requested.
+    ///
     /// # Errors
-    /// - [`DomainError::Forbidden`] when the requested role is not self-assignable.
     /// - [`DomainError::Conflict`] when email or username is already taken.
     pub async fn register(
         &self,
         command: RegisterCommand,
         context: &RequestContext,
     ) -> AppResult<AuthOutcome> {
-        if !command.role.is_self_assignable() {
-            return Err(AppError::Domain(DomainError::Forbidden(
-                "this role cannot be requested at registration".into(),
-            )));
-        }
-
+        let role = Role::User;
         let password_hash = self.hasher.hash(command.password.expose())?;
         let user = self
             .store
@@ -88,7 +85,7 @@ impl AuthService {
                 command.username.as_str(),
                 command.email.as_str(),
                 &password_hash,
-                command.role,
+                role,
             )
             .await?;
 

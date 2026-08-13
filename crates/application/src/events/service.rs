@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use ecoquest_domain::{DomainError, EventStatus};
+use ecoquest_domain::{DomainError, EventStatus, VerificationStatus};
 use uuid::Uuid;
 
 use super::{
@@ -24,23 +24,44 @@ impl EventService {
         Self { store }
     }
 
-    async fn require_organizer(&self, organization_id: Uuid, actor_id: Uuid) -> AppResult<()> {
+    /// Fails unless `actor_id` owns `organization_id`.
+    ///
+    /// Ownership is the only authorization for organization event management:
+    /// the platform no longer tracks organization membership.
+    async fn require_owner(&self, organization_id: Uuid, actor_id: Uuid) -> AppResult<()> {
         if self
             .store
-            .is_organization_member(organization_id, actor_id)
+            .is_organization_owner(organization_id, actor_id)
             .await?
         {
             Ok(())
         } else {
             Err(AppError::Domain(DomainError::Forbidden(
-                "organization membership required".into(),
+                "organization ownership required".into(),
             )))
+        }
+    }
+
+    /// Fails unless `actor_id` owns `organization_id` and the organization is
+    /// approved. Owner actions that affect public trust (creating or publishing
+    /// events) require a verified organization.
+    async fn require_approved_owner(&self, organization_id: Uuid, actor_id: Uuid) -> AppResult<()> {
+        self.require_owner(organization_id, actor_id).await?;
+        match self
+            .store
+            .organization_verification_status(organization_id)
+            .await?
+        {
+            Some(VerificationStatus::Approved) => Ok(()),
+            _ => Err(AppError::Domain(DomainError::Forbidden(
+                "only approved organizations may run events".into(),
+            ))),
         }
     }
 
     pub async fn create(&self, command: CreateEventCommand, actor_id: Uuid) -> AppResult<Event> {
         validate_create(&command)?;
-        self.require_organizer(command.organization_id, actor_id)
+        self.require_approved_owner(command.organization_id, actor_id)
             .await?;
         self.store.create_event(command, actor_id).await
     }
@@ -65,6 +86,9 @@ impl EventService {
     }
 
     pub async fn publish(&self, event_id: Uuid, actor_id: Uuid) -> AppResult<()> {
+        let event = self.event_for_organizer(event_id, actor_id).await?;
+        self.require_approved_owner(event.organization_id, actor_id)
+            .await?;
         self.transition(
             event_id,
             actor_id,
@@ -75,6 +99,9 @@ impl EventService {
     }
 
     pub async fn activate(&self, event_id: Uuid, actor_id: Uuid) -> AppResult<()> {
+        let event = self.event_for_organizer(event_id, actor_id).await?;
+        self.require_approved_owner(event.organization_id, actor_id)
+            .await?;
         self.transition(
             event_id,
             actor_id,
@@ -173,13 +200,13 @@ impl EventService {
     pub async fn browse(&self) -> AppResult<Vec<Event>> {
         self.store.list_published_events(Utc::now()).await
     }
-    /// Lists every event belonging to an organization the actor belongs to.
+    /// Lists every event belonging to an organization the actor owns.
     pub async fn list_for_organization(
         &self,
         organization_id: Uuid,
         actor_id: Uuid,
     ) -> AppResult<Vec<Event>> {
-        self.require_organizer(organization_id, actor_id).await?;
+        self.require_owner(organization_id, actor_id).await?;
         self.store.list_organization_events(organization_id).await
     }
     pub async fn detail(&self, event_id: Uuid) -> AppResult<Event> {
@@ -268,13 +295,13 @@ impl EventService {
             )));
         }
         let event = self.detail(event_id).await?;
-        self.require_organizer(event.organization_id, actor_id)
+        self.require_owner(event.organization_id, actor_id)
             .await
     }
 
     async fn event_for_organizer(&self, event_id: Uuid, actor_id: Uuid) -> AppResult<Event> {
         let event = self.detail(event_id).await?;
-        self.require_organizer(event.organization_id, actor_id)
+        self.require_owner(event.organization_id, actor_id)
             .await?;
         Ok(event)
     }

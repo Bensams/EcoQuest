@@ -27,27 +27,27 @@ pub const TEST_ACCOUNTS: [SeedAccount; 5] = [
     SeedAccount {
         username: "eco_player",
         email: "player@ecoquest.test",
-        role: Role::Player,
+        role: Role::User,
     },
     SeedAccount {
         username: "eco_organizer",
         email: "organizer@ecoquest.test",
-        role: Role::OrganizationMember,
+        role: Role::User,
     },
     SeedAccount {
         username: "alex",
         email: "alex@ecoquest.test",
-        role: Role::Player,
+        role: Role::User,
     },
     SeedAccount {
         username: "maria",
         email: "maria@ecoquest.test",
-        role: Role::Player,
+        role: Role::User,
     },
     SeedAccount {
         username: "diego",
         email: "diego@ecoquest.test",
-        role: Role::Player,
+        role: Role::User,
     },
 ];
 

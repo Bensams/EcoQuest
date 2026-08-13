@@ -31,12 +31,11 @@ pub struct Certificate {
     pub status: String,
 }
 
-/// Organization membership and approval state for the calling user.
+/// Organization ownership and approval state for the calling user.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct OrganizationStatus {
     pub organization_id: Uuid,
     pub name: String,
-    pub member_role: String,
     pub verification_status: String,
     pub reviewed_at: Option<DateTime<Utc>>,
 }
@@ -54,7 +53,7 @@ pub trait CertificateStore: Send + Sync {
     /// Reads a certificate by its public verification hash. No authentication.
     async fn find_by_hash(&self, verification_hash: &[u8])
         -> crate::AppResult<Option<Certificate>>;
-    /// Lists organizations the user belongs to with approval state.
+    /// Lists organizations the user owns with approval state.
     async fn organization_status(&self, user_id: Uuid)
         -> crate::AppResult<Vec<OrganizationStatus>>;
 }

@@ -137,6 +137,23 @@ impl EventStore for PgEventStore {
         }
         Ok(events)
     }
+    async fn list_organization_events(&self, organization_id: Uuid) -> AppResult<Vec<Event>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {EVENT_COLUMNS} FROM events e WHERE e.organization_id=$1 ORDER BY e.starts_at"
+        ))
+        .bind(organization_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
+        let mut events = rows
+            .iter()
+            .map(parse_event)
+            .collect::<AppResult<Vec<_>>>()?;
+        for event in &mut events {
+            load_impacts(&self.pool, event).await?;
+        }
+        Ok(events)
+    }
     async fn transition_event(&self, id: Uuid, old: &str, new: &str) -> AppResult<bool> {
         Ok(sqlx::query(
             "UPDATE events SET status=$3::event_status WHERE id=$1 AND status=$2::event_status",

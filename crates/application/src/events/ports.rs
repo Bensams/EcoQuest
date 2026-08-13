@@ -18,6 +18,8 @@ pub trait EventStore: Send + Sync {
     ) -> AppResult<Option<Event>>;
     async fn find_event(&self, event_id: Uuid) -> AppResult<Option<Event>>;
     async fn list_published_events(&self, now: DateTime<Utc>) -> AppResult<Vec<Event>>;
+    /// Lists every event for an organization regardless of status.
+    async fn list_organization_events(&self, organization_id: Uuid) -> AppResult<Vec<Event>>;
     async fn transition_event(
         &self,
         event_id: Uuid,

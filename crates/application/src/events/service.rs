@@ -173,6 +173,15 @@ impl EventService {
     pub async fn browse(&self) -> AppResult<Vec<Event>> {
         self.store.list_published_events(Utc::now()).await
     }
+    /// Lists every event belonging to an organization the actor belongs to.
+    pub async fn list_for_organization(
+        &self,
+        organization_id: Uuid,
+        actor_id: Uuid,
+    ) -> AppResult<Vec<Event>> {
+        self.require_organizer(organization_id, actor_id).await?;
+        self.store.list_organization_events(organization_id).await
+    }
     pub async fn detail(&self, event_id: Uuid) -> AppResult<Event> {
         self.store
             .find_event(event_id)

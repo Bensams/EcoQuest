@@ -23,30 +23,20 @@ pub struct SeedAccount {
 }
 
 /// Test accounts created alongside the administrator.
-pub const TEST_ACCOUNTS: [SeedAccount; 5] = [
-    SeedAccount {
-        username: "eco_player",
-        email: "player@ecoquest.test",
-        role: Role::User,
-    },
-    SeedAccount {
-        username: "eco_organizer",
-        email: "organizer@ecoquest.test",
-        role: Role::User,
-    },
+pub const TEST_ACCOUNTS: [SeedAccount; 3] = [
     SeedAccount {
         username: "alex",
         email: "alex@ecoquest.test",
         role: Role::User,
     },
     SeedAccount {
-        username: "maria",
-        email: "maria@ecoquest.test",
+        username: "ben",
+        email: "ben@ecoquest.test",
         role: Role::User,
     },
     SeedAccount {
-        username: "diego",
-        email: "diego@ecoquest.test",
+        username: "erwin",
+        email: "erwin@ecoquest.test",
         role: Role::User,
     },
 ];

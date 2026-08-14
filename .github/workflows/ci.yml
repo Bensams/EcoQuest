@@ -33,6 +33,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # `npm run build` compiles crates/game-wasm first, so this job needs the
+      # wasm target and a wasm-bindgen CLI matching the wasm-bindgen crate in
+      # Cargo.lock. Mismatched versions fail the build with a schema error.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.127
       - run: npm install
       - run: npm run lint
       - run: npm run build

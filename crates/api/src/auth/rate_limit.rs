@@ -1,6 +1,6 @@
 //! Fixed-window rate limiting for authentication endpoints.
 //!
-//! ponytail: in-process counters, so limits are per API instance and reset on
+//! Caveat: in-process counters, so limits are per API instance and reset on
 //! restart. Move to a shared Redis/Postgres counter when the API runs more than
 //! one replica.
 

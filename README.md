@@ -46,6 +46,14 @@ the mock.
 - Node.js 20+ and npm
 - Docker with Compose v2
 
+`npm run dev` needs nothing further. `npm run build` also compiles `crates/game-wasm`, so it
+additionally needs the WebAssembly target and a matching `wasm-bindgen` CLI:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.127   # must match wasm-bindgen in Cargo.lock
+```
+
 ## Setup
 
 ### Linux / macOS / WSL
@@ -163,8 +171,9 @@ Or, with `make` (Linux/macOS/WSL): `make ci`.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Only `DATABASE_URL` is required; the rest default to
-development values. The file contains placeholders only — never commit real secrets.
+Copy `.env.example` to `.env`. `DATABASE_URL` and `JWT_SECRET` (at least 32 characters)
+are required; the rest default to development values. The API refuses to start if either
+is missing. The file contains placeholders only — never commit real secrets.
 
 ## Troubleshooting
 

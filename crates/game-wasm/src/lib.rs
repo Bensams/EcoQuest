@@ -112,6 +112,21 @@ mod tests {
         assert_eq!(game_state_for_points(2900).environment, "Global Explorer");
     }
 
+    /// `users.level` is a generated column defined as `LEAST(30, eco_points / 100 + 1)`
+    /// in migrations/20260812090000_level_alignment.sql. Both ladders must agree, or
+    /// the API and the client will report different levels for the same player.
+    #[test]
+    fn level_matches_the_generated_database_column() {
+        for points in [0_u32, 1, 99, 100, 101, 999, 1000, 2899, 2900, 3000, 10_000] {
+            let sql_level = (points / 100 + 1).min(30);
+            assert_eq!(
+                game_state_for_points(points).level,
+                sql_level,
+                "ladders disagree at {points} points"
+            );
+        }
+    }
+
     #[test]
     fn progress_stops_at_max_level() {
         let state = game_state_for_points(3000);

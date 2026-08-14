@@ -5,6 +5,7 @@ use ecoquest_application::{
     achievements::{Achievement, AchievementStore, MintJob, MintResult},
     AppError, AppResult,
 };
+use ecoquest_domain::DomainError;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 #[derive(Clone, Debug)]
@@ -44,13 +45,22 @@ impl AchievementStore for PgAchievementStore {
         Ok(sqlx::query("UPDATE wallet_challenges SET consumed_at=$4 WHERE user_id=$1 AND wallet_address=$2 AND nonce_hash=$3 AND consumed_at IS NULL AND expires_at>$4").bind(u).bind(w).bind(h).bind(now).execute(&self.pool).await.map_err(err)?.rows_affected()==1)
     }
     async fn set_wallet(&self, u: Uuid, w: &str) -> AppResult<()> {
-        sqlx::query("UPDATE users SET wallet_address=$2 WHERE id=$1")
+        // users.wallet_address is uniquely indexed, so a wallet already linked to
+        // another account is a caller-visible conflict, not a dependency failure.
+        match sqlx::query("UPDATE users SET wallet_address=$2 WHERE id=$1")
             .bind(u)
             .bind(w)
             .execute(&self.pool)
             .await
-            .map_err(err)?;
-        Ok(())
+        {
+            Ok(_) => Ok(()),
+            Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
+                Err(AppError::Domain(DomainError::Conflict(
+                    "wallet is already linked to another account".into(),
+                )))
+            }
+            Err(e) => Err(err(e)),
+        }
     }
     async fn list_for_user(&self, u: Uuid) -> AppResult<Vec<Achievement>> {
         sqlx::query("SELECT achievement_key,status::text status,verification_reference,wallet_address,mint_identifier,transaction_signature FROM blockchain_achievements WHERE user_id=$1 ORDER BY created_at").bind(u).fetch_all(&self.pool).await.map_err(err)?.iter().map(|r|Ok(Achievement { achievement_key:r.try_get("achievement_key").map_err(err)?,status:r.try_get("status").map_err(err)?,verification_reference:r.try_get("verification_reference").map_err(err)?,wallet_address:r.try_get("wallet_address").map_err(err)?,mint_identifier:r.try_get("mint_identifier").map_err(err)?,transaction_signature:r.try_get("transaction_signature").map_err(err)?,explorer_url:None })).collect()

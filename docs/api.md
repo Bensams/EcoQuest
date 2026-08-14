@@ -8,7 +8,7 @@ Every error is `{"error":{"code":"...","message":"..."}}`. Every response includ
 
 | Method | Path | Auth | Body / result |
 | --- | --- | --- | --- |
-| POST | `/api/auth/register` | no | `username,email,password`; only `PLAYER` is self-assignable |
+| POST | `/api/auth/register` | no | `username,email,password`, optional `role`; `PLAYER` (default) and `ORGANIZATION_MEMBER` are self-assignable, `ADMIN` is rejected with 403 |
 | POST | `/api/auth/login` | no | `email,password`; session cookies |
 | GET | `/api/auth/me` | yes | profile, including `eco_points` |
 | GET | `/api/events` | no | published events |
@@ -32,7 +32,7 @@ Event create body has `name`, `description`, `activity_type` (`BEACH_CLEANUP`), 
 
 Certificates are issued asynchronously: verification writes a durable `certificate.issue` outbox event and the API's certificate worker consumes it, so a certificate appears shortly after verification rather than instantly.
 
-No PDF rendering endpoint exists; certificate routes return JSON facts only. Blockchain minting is still the mock adapter (`mock://solana/...`), not a real Solana transaction. Do not claim on-chain proofs or downloadable PDFs.
+No PDF rendering endpoint exists; certificate routes return JSON facts only. Blockchain minting is still the mock adapter (`mock-mint-<hash>` identifiers with `mock://chain/tx/...` explorer URLs), not a real Solana transaction. Do not claim on-chain proofs or downloadable PDFs.
 
 ## Headers
 

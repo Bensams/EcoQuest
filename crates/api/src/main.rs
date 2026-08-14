@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let events = EventService::new(Arc::new(PgEventStore::new(&store)));
     let impact = ImpactService::new(Arc::new(PgImpactStore::new(&store)));
-    // ponytail: mock adapter is local test transport; replace with Solana signer adapter before devnet.
+    // NOTE: mock adapter is local test transport; replace with Solana signer adapter before devnet.
     let achievements = Arc::new(AchievementService::new(
         Arc::new(PgAchievementStore::new(&store)),
         Arc::new(MockBlockchainAdapter),

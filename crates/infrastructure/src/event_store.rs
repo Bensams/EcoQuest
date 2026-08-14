@@ -206,6 +206,22 @@ impl EventStore for PgEventStore {
                 "event is not open for registration".into(),
             )));
         }
+        // Checked before capacity: a player who already holds a seat on a full
+        // event would otherwise be told the event is full, which reads as though
+        // they had lost their place.
+        let already_joined: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM participations WHERE event_id=$1 AND user_id=$2)",
+        )
+        .bind(event_id)
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        if already_joined {
+            return Err(AppError::Domain(DomainError::Conflict(
+                "already joined event".into(),
+            )));
+        }
         let capacity: i32 = row.try_get("capacity").map_err(db_err)?;
         let count: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM participations WHERE event_id=$1 AND status <> 'CANCELLED'",

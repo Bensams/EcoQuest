@@ -29,9 +29,11 @@ api:
 cli-health:
 	cargo run -p ecoquest-cli -- health
 
-# Reads DATABASE_URL and SEED_* from .env.
+# Reads DATABASE_URL and SEED_* from .env. Lives with the API, not the CLI:
+# the CLI never opens a database connection, and the first ADMIN cannot be
+# created over HTTP.
 seed:
-	cargo run -p ecoquest-cli -- seed
+	cargo run -p ecoquest-api --bin seed
 
 # Development/test only. reset destroys all local data.
 demo-reset:

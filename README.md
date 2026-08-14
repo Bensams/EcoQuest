@@ -110,19 +110,27 @@ above, or use WSL for the `make` targets.
 `ecoquest` is API-only: it never opens a PostgreSQL connection. Set `ECOQUEST_API_URL` or pass `--api-url`; HTTPS is required except `localhost` development URLs. Login stores API session cookies at `%APPDATA%\\EcoQuest\\session.json` on Windows or `$HOME/EcoQuest/session.json` elsewhere. Keep this file private; do not copy it to another API host.
 
 ```powershell
+cargo run -p ecoquest-cli -- health
 cargo run -p ecoquest-cli -- login --email organizer@ecoquest.test --password 'Example-password-123!'
 cargo run -p ecoquest-cli -- me
 cargo run -p ecoquest-cli -- organizations status
 cargo run -p ecoquest-cli -- events list
 cargo run -p ecoquest-cli -- events create --organization-id <org-uuid> --name 'Beach cleanup' --activity-type BEACH_CLEANUP --location 'North beach' --starts-at '2026-08-13T09:00:00Z' --ends-at '2026-08-13T12:00:00Z' --capacity 50 --eco-points 100
+cargo run -p ecoquest-cli -- events publish <event-uuid>
+cargo run -p ecoquest-cli -- events activate <event-uuid>
 cargo run -p ecoquest-cli -- events generate-qr <event-uuid>
 cargo run -p ecoquest-cli -- participants <event-uuid>
 cargo run -p ecoquest-cli -- verify <event-uuid> <participation-uuid>
+cargo run -p ecoquest-cli -- events cancel <event-uuid>
 cargo run -p ecoquest-cli -- certificates issue-status <participation-uuid>
 cargo run -p ecoquest-cli -- stats --json
 ```
 
-`verify` asks for confirmation because it awards points and can issue a certificate. Use `--yes` only in reviewed automation. All commands accept global `--json` for scripting; default output is readable key/value tables.
+An event must be published before players can join it, and active before a
+check-in code works, so the organizer order is create → publish → activate →
+generate-qr → participants → verify.
+
+`health` needs no session. `verify` and `events cancel` ask for confirmation, because one awards points and can issue a certificate and the other revokes a live check-in code. Use `--yes` only in reviewed automation. All commands accept global `--json` for scripting; default output is readable key/value tables.
 
 ## Competition demo
 

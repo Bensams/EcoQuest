@@ -74,7 +74,23 @@ enum CertificateCommand {
 enum EventCommand {
     Create(CreateEvent),
     List,
-    GenerateQr { event_id: String },
+    /// Move a draft event to PUBLISHED so players can join it.
+    Publish {
+        event_id: String,
+    },
+    /// Move a published event to ACTIVE so check-in codes work.
+    Activate {
+        event_id: String,
+    },
+    /// Cancel an event and revoke any live check-in code.
+    Cancel {
+        event_id: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    GenerateQr {
+        event_id: String,
+    },
 }
 #[derive(Args, Debug)]
 struct CreateEvent {
@@ -158,10 +174,8 @@ fn prompt(label: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     Ok(value.trim().to_owned())
 }
-fn confirm() -> Result<(), String> {
-    if prompt("Verify participant? This awards points and may issue certificate. Type yes")?
-        == "yes"
-    {
+fn confirm(action: &str) -> Result<(), String> {
+    if prompt(&format!("{action} Type yes"))? == "yes" {
         Ok(())
     } else {
         Err("cancelled".into())
@@ -206,7 +220,13 @@ impl Api {
             .text()
             .await
             .map_err(|e| format!("cannot read API response: {e}"))?;
-        let value = serde_json::from_str(&text).unwrap_or_else(|_| json!({"message":text}));
+        // Lifecycle endpoints answer 204 with no body; report success rather
+        // than printing an empty field.
+        let value = if text.trim().is_empty() {
+            json!({ "status": status.as_u16(), "result": "ok" })
+        } else {
+            serde_json::from_str(&text).unwrap_or_else(|_| json!({ "message": text }))
+        };
         if !status.is_success() {
             // The API envelope is {"error":{"code":..,"message":..}}, so the
             // message is nested; the flat forms are fallbacks for proxy errors.
@@ -339,6 +359,31 @@ async fn run(cli: Cli) -> Result<(), String> {
                     command: EventCommand::List,
                 } => (Method::GET, "/api/events".into(), None, false),
                 Command::Events {
+                    command: EventCommand::Publish { event_id },
+                } => (
+                    Method::POST,
+                    format!("/api/events/{event_id}/publish"),
+                    None,
+                    false,
+                ),
+                Command::Events {
+                    command: EventCommand::Activate { event_id },
+                } => (
+                    Method::POST,
+                    format!("/api/events/{event_id}/activate"),
+                    None,
+                    false,
+                ),
+                Command::Events {
+                    command: EventCommand::Cancel { event_id, yes },
+                } => (
+                    Method::POST,
+                    format!("/api/events/{event_id}/cancel"),
+                    None,
+                    // Cancelling revokes check-in codes and cannot be undone.
+                    !yes,
+                ),
+                Command::Events {
                     command: EventCommand::GenerateQr { event_id },
                 } => (
                     Method::POST,
@@ -384,7 +429,11 @@ async fn run(cli: Cli) -> Result<(), String> {
                 Command::Health | Command::Login(..) => unreachable!(),
             };
             if confirmation {
-                confirm()?
+                confirm(if path.ends_with("/cancel") {
+                    "Cancel event? This revokes any live check-in code and cannot be undone."
+                } else {
+                    "Verify participant? This awards points and may issue a certificate."
+                })?;
             }
             let value = api.call(method, &path, body).await?;
             print_value(&value, cli.json);

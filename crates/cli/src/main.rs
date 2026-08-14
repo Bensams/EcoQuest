@@ -28,6 +28,8 @@ struct Cli {
 }
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Query API and database health. Requires no session.
+    Health,
     Login(Login),
     Me,
     Organizations {
@@ -95,6 +97,12 @@ struct CreateEvent {
     #[arg(long)]
     eco_points: i32,
 }
+/// Session cookie names set by the API. These must match `ACCESS_COOKIE` and
+/// `REFRESH_COOKIE` in `crates/api/src/auth/extract.rs`; if they drift, login
+/// silently keeps no cookies and every later command reports "not logged in".
+const ACCESS_COOKIE: &str = "eq_access";
+const REFRESH_COOKIE: &str = "eq_refresh";
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Session {
     api_url: String,
@@ -200,14 +208,15 @@ impl Api {
             .map_err(|e| format!("cannot read API response: {e}"))?;
         let value = serde_json::from_str(&text).unwrap_or_else(|_| json!({"message":text}));
         if !status.is_success() {
-            return Err(format!(
-                "API {status}: {}",
-                value
-                    .get("message")
-                    .or_else(|| value.get("error"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("request failed")
-            ));
+            // The API envelope is {"error":{"code":..,"message":..}}, so the
+            // message is nested; the flat forms are fallbacks for proxy errors.
+            let detail = value
+                .pointer("/error/message")
+                .or_else(|| value.get("message"))
+                .or_else(|| value.get("error"))
+                .and_then(Value::as_str)
+                .unwrap_or("request failed");
+            return Err(format!("API {status}: {detail}"));
         }
         Ok(value)
     }
@@ -257,6 +266,13 @@ async fn main() {
 }
 async fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
+        // Health is a readiness probe, so it must work before anyone logs in.
+        Command::Health => {
+            let api = Api::new(&cli.api_url, None)?;
+            let value = api.call(Method::GET, "/api/health", None).await?;
+            print_value(&value, cli.json);
+            Ok(())
+        }
         Command::Login(login) => {
             let email = match login.email {
                 Some(v) => v,
@@ -281,7 +297,10 @@ async fn run(cli: Cli) -> Result<(), String> {
                 .iter()
                 .filter_map(|h| h.to_str().ok())
                 .filter_map(|v| v.split(';').next())
-                .filter(|v| v.starts_with("ecoquest_access=") || v.starts_with("ecoquest_refresh="))
+                .filter(|v| {
+                    v.starts_with(&format!("{ACCESS_COOKIE}="))
+                        || v.starts_with(&format!("{REFRESH_COOKIE}="))
+                })
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
             let body = response.text().await.unwrap_or_default();
@@ -362,7 +381,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                     false,
                 ),
                 Command::Stats => (Method::GET, "/api/impact".into(), None, false),
-                Command::Login(..) => unreachable!(),
+                Command::Health | Command::Login(..) => unreachable!(),
             };
             if confirmation {
                 confirm()?
@@ -391,6 +410,58 @@ mod tests {
     fn rejects_nonlocal_http() {
         assert!(Api::new("http://example.test", None).is_err())
     }
+    /// The API sets `eq_access` / `eq_refresh`. Login filters Set-Cookie by these
+    /// names, so a rename on either side must fail here rather than silently
+    /// storing an empty session.
+    #[test]
+    fn session_cookie_names_match_the_api() {
+        assert_eq!(ACCESS_COOKIE, "eq_access");
+        assert_eq!(REFRESH_COOKIE, "eq_refresh");
+    }
+
+    #[test]
+    fn health_needs_no_stored_session() {
+        let cli = Cli::try_parse_from(["ecoquest", "health"]).unwrap();
+        assert!(matches!(cli.command, Command::Health));
+    }
+
+    #[tokio::test]
+    async fn api_error_envelope_is_reported_to_the_operator() {
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+        let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = server.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = server.accept().await.unwrap();
+            let mut request = vec![0; 1024];
+            let _ = stream.read(&mut request).await.unwrap();
+            let body = br#"{"error":{"code":"conflict","message":"already joined event"}}"#;
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            stream.write_all(body).await.unwrap();
+        });
+        let api = Api::new(&format!("http://{address}"), None).unwrap();
+        let error = api
+            .call(Method::GET, "/api/events", None)
+            .await
+            .expect_err("expected the 409 to surface");
+        assert!(
+            error.contains("already joined event"),
+            "operator lost the API message: {error}"
+        );
+        task.await.unwrap();
+    }
+
     #[tokio::test]
     async fn mock_server_request_includes_session_cookie() {
         use tokio::{

@@ -88,8 +88,35 @@ export default function App() {
   const [communityGoal, setCommunityGoal] = useState<CommunityGoal>();
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [linking, setLinking] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
+  const [authBusy, setAuthBusy] = useState(false);
   const wasm = useRef<GameWasm>();
   const gameRef = useRef<GameState>();
+
+  // Session lives in HttpOnly cookies, so the client never holds a token; it
+  // only tracks whether /api/auth/me answered.
+  async function submitAuth(event: React.FormEvent) {
+    event.preventDefault();
+    setAuthBusy(true);
+    try {
+      const path = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const body = authMode === 'login'
+        ? { email: authForm.email, password: authForm.password }
+        : { username: authForm.username, email: authForm.email, password: authForm.password };
+      await request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      setAuthForm({ username: '', email: '', password: '' });
+      await refreshPlayer();
+      setMessage(authMode === 'login' ? 'Signed in.' : 'Account created. You are signed in.');
+    } catch (error) { setMessage((error as Error).message); } finally { setAuthBusy(false); }
+  }
+
+  async function signOut() {
+    try { await request('/api/auth/logout', { method: 'POST' }); } catch { /* clearing local state still signs the user out */ }
+    gameRef.current = undefined;
+    setProfile(undefined); setGame(undefined); setAchievements([]); setPlayerImpact(undefined); setAnimation('');
+    setMessage('Signed out.');
+  }
 
   // Server issues a single-use nonce, the wallet signs it, the server verifies ownership.
   // The private key never leaves the extension and no transaction is submitted.
@@ -126,13 +153,15 @@ export default function App() {
     }).catch(() => undefined);
   }
 
+  // Returns the promise so callers can refresh the list before reporting their
+  // own outcome, instead of having their message overwritten by this one.
   function loadEvents() {
     setMissionsState('loading'); setMessage('Loading missions…');
-    void request('/api/events').then((items: Event[]) => { setEvents(items); setMissionsState('ready'); setMessage(items.length ? '' : 'No upcoming missions.'); }).catch((error: Error) => { setMissionsState('error'); setMessage(error.message); });
+    return request('/api/events').then((items: Event[]) => { setEvents(items); setMissionsState('ready'); setMessage(items.length ? '' : 'No upcoming missions.'); }).catch((error: Error) => { setMissionsState('error'); setMessage(error.message); });
   }
 
   useEffect(() => {
-    loadEvents();
+    void loadEvents();
     refreshImpact();
     import(/* @vite-ignore */ GAME_WASM_URL).then(async module => { await module.default(); wasm.current = module as GameWasm; setGameError(''); return refreshPlayer(); }).catch(() => setGameError('Restoration game unavailable. Reload after WebAssembly is available.'));
     // API URL is deployment constant; mount-only game initialization is intentional.
@@ -144,7 +173,14 @@ export default function App() {
   }
   async function join() {
     if (!selected) return;
-    try { await request(`/api/events/${selected.id}/join`, { method: 'POST' }); setMessage('Joined mission. Check in when event is active.'); await showEvent(selected.id); } catch (error) { setMessage((error as Error).message); }
+    try {
+      await request(`/api/events/${selected.id}/join`, { method: 'POST' });
+      // Refresh the open mission and the list counts first: both clear the
+      // status line, so the confirmation has to be set last to survive.
+      await showEvent(selected.id);
+      await loadEvents();
+      setMessage('Joined mission. Check in when the event is active.');
+    } catch (error) { setMessage((error as Error).message); }
   }
   async function checkIn(value = code) {
     if (!value.trim()) return setMessage('Enter check-in code.');
@@ -159,6 +195,23 @@ export default function App() {
   return <main>
     <header><h1>EcoQuest missions</h1><p>Join local environmental action.</p></header>
     {message && <p role="status">{message}</p>}
+    <section className="account" aria-label="Account">
+      {profile
+        ? <><p>Signed in as {profile.username}.</p><button type="button" onClick={() => void signOut()}>Sign out</button></>
+        : <>
+          <h2>{authMode === 'login' ? 'Sign in' : 'Create account'}</h2>
+          <p>Joining a mission and checking in need an account.</p>
+          <form onSubmit={event => void submitAuth(event)}>
+            {authMode === 'register' && <label>Username<input value={authForm.username} autoComplete="username" required minLength={3} maxLength={32} onChange={event => setAuthForm({ ...authForm, username: event.target.value })} /></label>}
+            <label>Email<input type="email" value={authForm.email} autoComplete="email" required onChange={event => setAuthForm({ ...authForm, email: event.target.value })} /></label>
+            <label>Password<input type="password" value={authForm.password} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} required minLength={12} onChange={event => setAuthForm({ ...authForm, password: event.target.value })} /></label>
+            <button type="submit" disabled={authBusy}>{authBusy ? 'Working…' : authMode === 'login' ? 'Sign in' : 'Create account'}</button>
+          </form>
+          <button type="button" onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setMessage(''); }}>
+            {authMode === 'login' ? 'Need an account? Register' : 'Already registered? Sign in'}
+          </button>
+        </>}
+    </section>
     <section className={`game stage-${game?.restoration_stage ?? 0}`} aria-label="Restoration game" aria-live="polite">
       <h2>Restoration world</h2>
       {gameError ? <p role="status">{gameError}</p> : game && <><div className="scene" aria-label={['Polluted', 'Cleanup started', 'Recovering', 'Healthy ecosystem'][game.restoration_stage]}><span className="sun">☀</span><span className="character">{game.character === 'Turtle' ? '🐢' : game.character === 'Eco Guardian' ? '🧑‍🌾' : '🧍'}</span><span className="nature">{game.restoration_stage === 3 ? '🌳 🐟 🦋' : game.restoration_stage === 2 ? '🌱 🐟' : game.restoration_stage === 1 ? '🗑️ 🌱' : '🗑️ 🛢️'}</span></div><p>{profile?.username}: {profile?.eco_points} Eco Points · Level {game.level} · {game.character} · {game.environment}</p><progress value={game.progress_points} max={game.progress_points + game.points_to_next_level || 1} /><span>{game.points_to_next_level ? `${game.points_to_next_level} points to next level` : 'Maximum level reached'}</span></>}
@@ -176,7 +229,7 @@ export default function App() {
     </section>
     <section aria-label="Available missions" className="missions" aria-busy={missionsState === 'loading'}>
       {missionsState === 'loading' && <p role="status">Loading missions…</p>}
-      {missionsState === 'error' && <button type="button" onClick={loadEvents}>Retry missions</button>}
+      {missionsState === 'error' && <button type="button" onClick={() => void loadEvents()}>Retry missions</button>}
       {missionsState === 'ready' && events.map(event => <button className="mission" key={event.id} onClick={() => showEvent(event.id)}><strong>{event.name}</strong><span>{event.location} · {new Date(event.starts_at).toLocaleString()}</span><span>{event.registered_count}/{event.capacity} joined · {event.eco_points} points</span></button>)}
     </section>
     {selected && <section className="detail" aria-live="polite"><button onClick={() => setSelected(undefined)}>Close</button><h2>{selected.name}</h2><p>{selected.description}</p><p>{selected.activity_type} · {selected.location}</p><p>{new Date(selected.starts_at).toLocaleString()} to {new Date(selected.ends_at).toLocaleString()}</p><ul>{selected.impacts.map(impact => <li key={`${impact.metric}-${impact.unit}`}>{impact.expected_value} {impact.unit} {impact.metric}</li>)}</ul><button onClick={join}>Join mission</button></section>}

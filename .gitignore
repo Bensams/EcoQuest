@@ -1,6 +1,11 @@
 /target
 **/target
 .env
+# Vite reads .env.local / .env.*.local for machine-specific overrides.
+.env.local
+.env.*.local
+web/.env.local
+web/.env.*.local
 *.log
 node_modules/
 web/dist/

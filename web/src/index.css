@@ -9,7 +9,11 @@ button { cursor: pointer; background: #176b42; color: white; border: 0; }
 .mission { color: #17372a; background: white; border: 1px solid #c6ddca; text-align: left; display: grid; gap: .3rem; }
 .mission strong { font-size: 1.05rem; }
 .mission span { font-size: .9rem; }
-.detail, .checkin { background: white; border: 1px solid #c6ddca; border-radius: .5rem; padding: 1rem; margin-top: 1rem; }
+.detail, .checkin, .account { background: white; border: 1px solid #c6ddca; border-radius: .5rem; padding: 1rem; margin-top: 1rem; }
+.account h2 { margin-top: 0; }
+.account form { display: grid; gap: .6rem; max-width: 22rem; margin-bottom: .6rem; }
+/* Mode switch is secondary to the form's submit button. */
+.account form + button { background: none; color: #176b42; border: 1px solid #c6ddca; }
 .detail button + h2 { margin-top: 1rem; }
 /* Wallet choices sit side by side; keep them from touching. */
 .impact button + button { margin-left: .6rem; }

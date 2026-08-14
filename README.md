@@ -21,8 +21,9 @@ adapter — see [Blockchain status](#blockchain-status).
 | Certificates             | Done     | Async worker; JSON payload, no PDF render yet               |
 | Progression game         | Done     | Rust → WebAssembly, presentation only                       |
 | Wallet linking           | Done     | Ed25519 ownership proof, Stellar and Solana addresses       |
+| Web player sign-in       | Done     | Register, sign in and sign out in the client                |
 | On-chain minting         | **Mock** | No program deployed; no transaction is broadcast            |
-| Web organizer console    | Missing  | Publish, QR, and verify are CLI-only                        |
+| Web organizer console    | Missing  | Publish, activate, QR, and verify are CLI-only              |
 | Web certificate view     | Missing  | API routes exist and are unused by the client               |
 
 ## Blockchain status

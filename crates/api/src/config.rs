@@ -56,7 +56,12 @@ impl Config {
     /// Returns [`ConfigError`] when a required variable is missing or malformed.
     pub fn from_env() -> Result<Self, ConfigError> {
         let database_url = required("DATABASE_URL")?;
+        // Container platforms (Cloud Run, Fly, Render, Koyeb) assign the port at
+        // start-up through `PORT` and route nothing to a process that binds
+        // anything else. An explicit API_BIND_ADDR still wins, so local
+        // development and docker-compose are unaffected.
         let bind_addr = optional("API_BIND_ADDR")
+            .or_else(|| optional("PORT").map(|port| format!("0.0.0.0:{port}")))
             .unwrap_or_else(|| "0.0.0.0:8080".to_string())
             .parse()
             .map_err(|e: std::net::AddrParseError| ConfigError::Invalid {

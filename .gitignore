@@ -19,3 +19,5 @@ blockchain/target/
 .DS_Store
 # Claude Code local worktrees and session state.
 .claude/
+# Vercel CLI writes project ids and build output here.
+.vercel/

@@ -1,0 +1,14 @@
+target
+**/target
+web
+blockchain
+docs
+scripts
+.git
+.github
+.claude
+.env
+.env.*
+*.log
+node_modules
+**/node_modules

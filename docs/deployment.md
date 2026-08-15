@@ -65,6 +65,14 @@ placeholder and the API rejects anything under 32 characters:
 openssl rand -base64 48
 ```
 
+Windows PowerShell has no `openssl` on its PATH (Git Bash does, at
+`/mingw64/bin/openssl`). The native equivalent, using the OS cryptographic RNG
+rather than `Get-Random`, which is not seeded for cryptographic use:
+
+```powershell
+$b = New-Object byte[] 48; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+```
+
 In the Render dashboard choose **New → Blueprint** and point it at this
 repository. Render reads [`render.yaml`](../render.yaml), which pins the free
 instance type, the Docker runtime, and `/api/health` as the health check — a

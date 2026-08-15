@@ -1,10 +1,13 @@
-//! Idempotent development seeding: one administrator plus test accounts.
+//! Idempotent development seeding: one administrator plus test accounts, and
+//! the full demo dataset of organizations, events and verified impact.
+
+use std::path::Path;
 
 use ecoquest_application::{
     auth::{ports::AuthStore, PasswordHasherService},
     AppError, AppResult,
 };
-use ecoquest_domain::{DomainError, EmailAddress, Password, Role, Username};
+use ecoquest_domain::{DomainError, EmailAddress, Role, Username};
 use sqlx::PgPool;
 
 use crate::{PgAuthStore, PgStore};
@@ -20,16 +23,21 @@ pub struct SeedAccount {
 }
 
 /// Test accounts created alongside the administrator.
-pub const TEST_ACCOUNTS: [SeedAccount; 2] = [
+pub const TEST_ACCOUNTS: [SeedAccount; 3] = [
     SeedAccount {
-        username: "eco_player",
-        email: "player@ecoquest.test",
-        role: Role::Player,
+        username: "alex",
+        email: "alex@ecoquest.test",
+        role: Role::User,
     },
     SeedAccount {
-        username: "eco_organizer",
-        email: "organizer@ecoquest.test",
-        role: Role::OrganizationMember,
+        username: "ben",
+        email: "ben@ecoquest.test",
+        role: Role::User,
+    },
+    SeedAccount {
+        username: "erwin",
+        email: "erwin@ecoquest.test",
+        role: Role::User,
     },
 ];
 
@@ -47,6 +55,10 @@ pub struct SeedReport {
 /// Re-running is safe: existing accounts are never modified, so a seeded
 /// password can never silently overwrite a real one.
 ///
+/// Dev convenience: `password` is *not* validated against the production
+/// password policy. Seed accounts only exist on a local database, so any
+/// password length is accepted here; real registrations still enforce policy.
+///
 /// # Errors
 /// Returns [`AppError::Domain`] when a supplied value fails validation, and
 /// [`AppError::Infrastructure`] when the database rejects a write.
@@ -58,7 +70,6 @@ pub async fn seed(
 ) -> AppResult<SeedReport> {
     let hasher = PasswordHasherService::new();
     let auth = PgAuthStore::new(store);
-    let password = Password::parse(password).map_err(AppError::Domain)?;
 
     let mut report = SeedReport::default();
     // Validate CLI input before writing anything.
@@ -71,7 +82,7 @@ pub async fn seed(
         admin_username.as_str(),
         admin_email.as_str(),
         Role::Admin,
-        password.expose(),
+        password,
         &mut report,
     )
     .await?;
@@ -85,13 +96,50 @@ pub async fn seed(
             username.as_str(),
             email.as_str(),
             account.role,
-            password.expose(),
+            password,
             &mut report,
         )
         .await?;
     }
 
     Ok(report)
+}
+
+/// Seeds accounts and the full demo dataset.
+///
+/// Runs the account seeder first, then executes `sql_path` (the idempotent
+/// `scripts/seed-full.sql`) which populates organizations, events,
+/// participations, verification ledgers, certificates and achievements.
+///
+/// Re-running is safe: account creation never overwrites, and the SQL file uses
+/// fixed identifiers with `ON CONFLICT DO NOTHING`.
+///
+/// # Errors
+/// Returns [`AppError::Infrastructure`] when the file cannot be read or a
+/// statement fails.
+pub async fn seed_full(
+    store: &PgStore,
+    admin_email: &str,
+    admin_username: &str,
+    password: &str,
+    sql_path: &Path,
+) -> AppResult<SeedReport> {
+    let report = seed(store, admin_email, admin_username, password).await?;
+    let sql = std::fs::read_to_string(sql_path).map_err(|e| {
+        AppError::Infrastructure(format!("cannot read seed file {}: {e}", sql_path.display()))
+    })?;
+    // One transaction: the dataset must land atomically or not at all.
+    let mut tx = store.pool().begin().await.map_err(db_err)?;
+    sqlx::raw_sql(&sql)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    tx.commit().await.map_err(db_err)?;
+    Ok(report)
+}
+
+fn db_err(err: sqlx::Error) -> AppError {
+    AppError::Infrastructure(err.to_string())
 }
 
 async fn create_if_missing(

@@ -6,6 +6,9 @@
 .env.*.local
 web/.env.local
 web/.env.*.local
+# Self-signed dev certificates. Never commit private keys.
+web/.certs/
+*.pem
 *.log
 node_modules/
 web/dist/
@@ -14,3 +17,5 @@ web/node_modules/
 web/public/game/
 blockchain/target/
 .DS_Store
+# Claude Code local worktrees and session state.
+.claude/

@@ -3,12 +3,14 @@
 use chrono::{DateTime, Utc};
 use ecoquest_application::{
     events::{
-        CreateEventCommand, Event, EventQrToken, EventStore, Participation, UpdateEventCommand,
-        VerificationResult,
+        Activity, CreateEventCommand, Event, EventQrToken, EventStore, Participation,
+        UpdateEventCommand, VerificationResult,
     },
     AppError, AppResult,
 };
-use ecoquest_domain::{ActivityType, DomainError, EventStatus, ParticipationStatus};
+use ecoquest_domain::{
+    ActivityType, DomainError, EventStatus, ParticipationStatus, VerificationStatus,
+};
 use sqlx::{PgPool, Row};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -30,12 +32,13 @@ impl PgEventStore {
 fn db_err(e: sqlx::Error) -> AppError {
     AppError::Infrastructure(e.to_string())
 }
-const EVENT_COLUMNS: &str = "e.id,e.organization_id,e.created_by,e.name,e.description,e.activity_type::text AS activity_type,e.location,e.starts_at,e.ends_at,e.capacity,e.eco_points,e.status::text AS status,(SELECT count(*) FROM participations p WHERE p.event_id=e.id AND p.status <> 'CANCELLED') AS registered_count";
+const EVENT_COLUMNS: &str = "e.id,e.organization_id,o.name AS organization_name,e.created_by,e.name,e.description,e.activity_type::text AS activity_type,e.location,e.starts_at,e.ends_at,e.capacity,e.eco_points,e.status::text AS status,(SELECT count(*) FROM participations p WHERE p.event_id=e.id AND p.status <> 'CANCELLED') AS registered_count";
 
 fn parse_event(row: &sqlx::postgres::PgRow) -> AppResult<Event> {
     Ok(Event {
         id: row.try_get("id").map_err(db_err)?,
         organization_id: row.try_get("organization_id").map_err(db_err)?,
+        organization_name: row.try_get("organization_name").map_err(db_err)?,
         created_by: row.try_get("created_by").map_err(db_err)?,
         name: row.try_get("name").map_err(db_err)?,
         description: row.try_get("description").map_err(db_err)?,
@@ -64,6 +67,7 @@ fn parse_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> 
         id: row.try_get("id").map_err(db_err)?,
         event_id: row.try_get("event_id").map_err(db_err)?,
         user_id: row.try_get("user_id").map_err(db_err)?,
+        username: row.try_get("username").map_err(db_err)?,
         status: ParticipationStatus::from_str(&row.try_get::<String, _>("status").map_err(db_err)?)
             .map_err(AppError::Domain)?,
         registered_at: row.try_get("registered_at").map_err(db_err)?,
@@ -71,15 +75,55 @@ fn parse_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> 
     })
 }
 
+fn parse_activity_participation(row: &sqlx::postgres::PgRow) -> AppResult<Participation> {
+    Ok(Participation {
+        id: row.try_get("participation_id").map_err(db_err)?,
+        event_id: row.try_get("event_id").map_err(db_err)?,
+        user_id: row.try_get("user_id").map_err(db_err)?,
+        username: row.try_get("username").map_err(db_err)?,
+        status: ParticipationStatus::from_str(
+            &row.try_get::<String, _>("participation_status")
+                .map_err(db_err)?,
+        )
+        .map_err(AppError::Domain)?,
+        registered_at: row.try_get("registered_at").map_err(db_err)?,
+        checked_in_at: row.try_get("checked_in_at").map_err(db_err)?,
+    })
+}
+
 #[async_trait::async_trait]
 impl EventStore for PgEventStore {
-    async fn is_organization_member(&self, org: Uuid, user: Uuid) -> AppResult<bool> {
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organization_members WHERE organization_id=$1 AND user_id=$2)").bind(org).bind(user).fetch_one(&self.pool).await.map_err(db_err)
+    async fn is_organization_owner(&self, org: Uuid, user: Uuid) -> AppResult<bool> {
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations WHERE id=$1 AND owner_id=$2)")
+            .bind(org)
+            .bind(user)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(db_err)
+    }
+    async fn organization_verification_status(
+        &self,
+        organization_id: Uuid,
+    ) -> AppResult<Option<VerificationStatus>> {
+        let row = sqlx::query("SELECT verification_status::text AS verification_status FROM organizations WHERE id=$1")
+            .bind(organization_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db_err)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let status: String = row.try_get("verification_status").map_err(db_err)?;
+        Ok(Some(
+            VerificationStatus::from_str(&status).map_err(AppError::Domain)?,
+        ))
     }
     async fn create_event(&self, c: CreateEventCommand, actor: Uuid) -> AppResult<Event> {
         let impacts = c.impacts.clone();
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let row = sqlx::query("INSERT INTO events (organization_id,created_by,name,description,activity_type,location,starts_at,ends_at,capacity,eco_points) VALUES ($1,$2,$3,$4,$5::activity_type,$6,$7,$8,$9,$10) RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count")
+        // parse_event needs organization_name, which a bare INSERT ... RETURNING
+        // cannot produce; the CTE joins organizations for it.
+        let row = sqlx::query("WITH inserted AS (INSERT INTO events (organization_id,created_by,name,description,activity_type,location,starts_at,ends_at,capacity,eco_points) VALUES ($1,$2,$3,$4,$5::activity_type,$6,$7,$8,$9,$10) RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count) SELECT i.id,i.organization_id,o.name AS organization_name,i.created_by,i.name,i.description,i.activity_type,i.location,i.starts_at,i.ends_at,i.capacity,i.eco_points,i.status,i.registered_count FROM inserted i JOIN organizations o ON o.id=i.organization_id")
             .bind(c.organization_id).bind(actor).bind(c.name).bind(c.description).bind(c.activity_type.as_str()).bind(c.location).bind(c.starts_at).bind(c.ends_at).bind(c.capacity).bind(c.eco_points).fetch_one(&mut *tx).await.map_err(db_err)?;
         let event = parse_event(&row)?;
         for impact in impacts {
@@ -93,7 +137,7 @@ impl EventStore for PgEventStore {
     async fn update_event(&self, id: Uuid, c: UpdateEventCommand) -> AppResult<Option<Event>> {
         let impacts = c.impacts;
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let row = sqlx::query("UPDATE events SET name=$2,description=$3,activity_type=$4::activity_type,location=$5,starts_at=$6,ends_at=$7,capacity=$8,eco_points=$9 WHERE id=$1 AND status='DRAFT' RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count")
+        let row = sqlx::query("WITH updated AS (UPDATE events SET name=$2,description=$3,activity_type=$4::activity_type,location=$5,starts_at=$6,ends_at=$7,capacity=$8,eco_points=$9 WHERE id=$1 AND status='DRAFT' RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count) SELECT up.id,up.organization_id,o.name AS organization_name,up.created_by,up.name,up.description,up.activity_type,up.location,up.starts_at,up.ends_at,up.capacity,up.eco_points,up.status,up.registered_count FROM updated up JOIN organizations o ON o.id=up.organization_id")
             .bind(id).bind(c.name).bind(c.description).bind(c.activity_type.as_str()).bind(c.location).bind(c.starts_at).bind(c.ends_at).bind(c.capacity).bind(c.eco_points).fetch_optional(&mut *tx).await.map_err(db_err)?;
         let Some(row) = row else {
             return Ok(None);
@@ -113,7 +157,7 @@ impl EventStore for PgEventStore {
     }
     async fn find_event(&self, id: Uuid) -> AppResult<Option<Event>> {
         let row = sqlx::query(&format!(
-            "SELECT {EVENT_COLUMNS} FROM events e WHERE e.id=$1"
+            "SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.id=$1"
         ))
         .bind(id)
         .fetch_optional(&self.pool)
@@ -127,7 +171,24 @@ impl EventStore for PgEventStore {
         Ok(Some(event))
     }
     async fn list_published_events(&self, now: DateTime<Utc>) -> AppResult<Vec<Event>> {
-        let rows = sqlx::query(&format!("SELECT {EVENT_COLUMNS} FROM events e WHERE e.status='PUBLISHED' AND e.ends_at>$1 ORDER BY e.starts_at")).bind(now).fetch_all(&self.pool).await.map_err(db_err)?;
+        let rows = sqlx::query(&format!("SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.status='PUBLISHED' AND e.ends_at>$1 ORDER BY e.starts_at")).bind(now).fetch_all(&self.pool).await.map_err(db_err)?;
+        let mut events = rows
+            .iter()
+            .map(parse_event)
+            .collect::<AppResult<Vec<_>>>()?;
+        for event in &mut events {
+            load_impacts(&self.pool, event).await?;
+        }
+        Ok(events)
+    }
+    async fn list_organization_events(&self, organization_id: Uuid) -> AppResult<Vec<Event>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.organization_id=$1 ORDER BY e.starts_at"
+        ))
+        .bind(organization_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
         let mut events = rows
             .iter()
             .map(parse_event)
@@ -235,7 +296,9 @@ impl EventStore for PgEventStore {
                 "event is full".into(),
             )));
         }
-        let inserted=sqlx::query("INSERT INTO participations (event_id,user_id) VALUES ($1,$2) RETURNING id,event_id,user_id,status::text AS status,registered_at,checked_in_at").bind(event_id).bind(user_id).fetch_one(&mut *tx).await;
+        // The row is mapped by parse_participation, which needs username; a bare
+        // INSERT ... RETURNING cannot join users, so wrap it in a CTE.
+        let inserted=sqlx::query("WITH inserted AS (INSERT INTO participations (event_id,user_id) VALUES ($1,$2) RETURNING id,event_id,user_id,status::text AS status,registered_at,checked_in_at) SELECT i.id,i.event_id,i.user_id,u.username,i.status,i.registered_at,i.checked_in_at FROM inserted i JOIN users u ON u.id=i.user_id").bind(event_id).bind(user_id).fetch_one(&mut *tx).await;
         let inserted = match inserted {
             Ok(r) => r,
             Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
@@ -255,14 +318,47 @@ impl EventStore for PgEventStore {
         qr_id: Uuid,
         now: DateTime<Utc>,
     ) -> AppResult<Option<Participation>> {
-        let r=sqlx::query("UPDATE participations p SET status='PENDING_VERIFICATION',checked_in_at=$4,qr_token_id=$3 FROM events e WHERE p.event_id=$1 AND p.user_id=$2 AND p.status='REGISTERED' AND e.id=p.event_id AND e.status='ACTIVE' AND e.starts_at <= $4 AND e.ends_at > $4 RETURNING p.id,p.event_id,p.user_id,p.status::text AS status,p.registered_at,p.checked_in_at").bind(event_id).bind(user_id).bind(qr_id).bind(now).fetch_optional(&self.pool).await.map_err(db_err)?;
+        let r=sqlx::query("WITH updated AS (UPDATE participations p SET status='PENDING_VERIFICATION',checked_in_at=$4,qr_token_id=$3 FROM events e WHERE p.event_id=$1 AND p.user_id=$2 AND p.status='REGISTERED' AND e.id=p.event_id AND e.status='ACTIVE' AND e.starts_at <= $4 AND e.ends_at > $4 RETURNING p.id,p.event_id,p.user_id,p.status::text AS status,p.registered_at,p.checked_in_at) SELECT up.id,up.event_id,up.user_id,u.username,up.status,up.registered_at,up.checked_in_at FROM updated up JOIN users u ON u.id=up.user_id").bind(event_id).bind(user_id).bind(qr_id).bind(now).fetch_optional(&self.pool).await.map_err(db_err)?;
         r.map(|r| parse_participation(&r)).transpose()
     }
     async fn list_participants(&self, event_id: Uuid) -> AppResult<Vec<Participation>> {
-        sqlx::query("SELECT id,event_id,user_id,status::text AS status,registered_at,checked_in_at FROM participations WHERE event_id=$1 ORDER BY registered_at").bind(event_id).fetch_all(&self.pool).await.map_err(db_err)?.iter().map(parse_participation).collect()
+        sqlx::query(
+            "SELECT p.id,p.event_id,p.user_id,u.username,p.status::text AS status,p.registered_at,p.checked_in_at \
+             FROM participations p JOIN users u ON u.id=p.user_id WHERE p.event_id=$1 ORDER BY p.registered_at",
+        )
+        .bind(event_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?
+        .iter()
+        .map(parse_participation)
+        .collect()
     }
     async fn find_participation(&self, id: Uuid) -> AppResult<Option<Participation>> {
-        sqlx::query("SELECT id,event_id,user_id,status::text AS status,registered_at,checked_in_at FROM participations WHERE id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
+        sqlx::query("SELECT p.id,p.event_id,p.user_id,u.username,p.status::text AS status,p.registered_at,p.checked_in_at FROM participations p JOIN users u ON u.id=p.user_id WHERE p.id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
+    }
+    async fn list_my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>> {
+        let rows = sqlx::query(&format!(
+            "SELECT p.id AS participation_id,p.event_id,p.user_id,u.username,p.status::text AS participation_status,p.registered_at,p.checked_in_at,{EVENT_COLUMNS} \
+             FROM participations p JOIN events e ON e.id=p.event_id JOIN organizations o ON o.id=e.organization_id JOIN users u ON u.id=p.user_id \
+             WHERE p.user_id=$1 ORDER BY e.starts_at DESC"
+        ))
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
+        let rows2 = rows;
+        let mut activities = Vec::with_capacity(rows2.len());
+        for row in &rows2 {
+            let participation = parse_activity_participation(row)?;
+            let mut event = parse_event(row)?;
+            load_impacts(&self.pool, &mut event).await?;
+            activities.push(Activity {
+                participation,
+                event,
+            });
+        }
+        Ok(activities)
     }
     async fn verify_participation(
         &self,

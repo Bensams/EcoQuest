@@ -15,14 +15,15 @@ use ecoquest_application::auth::{
     models::{AuthOutcome, LoginCommand, RegisterCommand, RequestContext, UserProfile},
     SessionTokens,
 };
-use ecoquest_domain::{EmailAddress, Password, Role, Username};
+use ecoquest_domain::{EmailAddress, Password, Username};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 use super::extract::{AuthUser, ACCESS_COOKIE, REFRESH_COOKIE};
 use crate::{state::AppState, ApiError};
 
-/// Registration payload.
+/// Registration payload. A role may not be requested; every new account is a
+/// regular `USER`.
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
     /// Desired username.
@@ -31,9 +32,6 @@ pub struct RegisterRequest {
     pub email: String,
     /// Plaintext password.
     pub password: String,
-    /// Requested role; defaults to `PLAYER`.
-    #[serde(default)]
-    pub role: Option<Role>,
 }
 
 /// Login payload.
@@ -78,7 +76,6 @@ async fn register(
         username: Username::parse(&body.username)?,
         email: EmailAddress::parse(&body.email)?,
         password: Password::parse(&body.password)?,
-        role: body.role.unwrap_or(Role::Player),
     };
     let outcome = state.auth.register(command, &context).await?;
     Ok(session_response(&state, jar, outcome, StatusCode::CREATED))

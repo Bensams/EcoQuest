@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::{
     env, fs,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 #[derive(Parser, Debug)]
@@ -30,6 +30,10 @@ struct Cli {
 enum Command {
     /// Query API and database health. Requires no session.
     Health,
+    /// Applies pending database migrations. No API needed.
+    Migrate,
+    /// Seeds the administrator, test accounts and the full demo dataset. No API needed.
+    Seed(Seed),
     Login(Login),
     Me,
     Organizations {
@@ -61,6 +65,37 @@ struct Login {
     email: Option<String>,
     #[arg(long)]
     password: Option<String>,
+}
+#[derive(Args, Debug)]
+struct Seed {
+    #[arg(long, env = "DATABASE_URL")]
+    database_url: String,
+    #[arg(long, env = "SEED_ADMIN_EMAIL", default_value = "admin@ecoquest.test")]
+    admin_email: String,
+    #[arg(long, env = "SEED_ADMIN_USERNAME", default_value = "eco_admin")]
+    admin_username: String,
+    #[arg(long, env = "SEED_PASSWORD", default_value = "ChangeMe-Local-1234")]
+    password: String,
+    #[arg(
+        long,
+        default_value = "../scripts/seed-full.sql",
+        help = "Path to the full dataset SQL file"
+    )]
+    seed_file: PathBuf,
+}
+
+/// Returns the seed SQL path, honoring a caller-supplied override and falling
+/// back to layout-relative locations so the CLI works from any working dir.
+fn seed_file_path(provided: &Path) -> PathBuf {
+    if provided.as_os_str() != Path::new("../scripts/seed-full.sql").as_os_str() {
+        return provided.to_path_buf();
+    }
+    for candidate in ["../scripts/seed-full.sql", "scripts/seed-full.sql"] {
+        if Path::new(candidate).exists() {
+            return PathBuf::from(candidate);
+        }
+    }
+    provided.to_path_buf()
 }
 #[derive(Subcommand, Debug)]
 enum OrganizationCommand {
@@ -342,6 +377,48 @@ async fn run(cli: Cli) -> Result<(), String> {
             );
             Ok(())
         }
+        Command::Migrate => {
+            let database_url = env::var("DATABASE_URL")
+                .map_err(|_| "DATABASE_URL is required (set it in .env)".to_string())?;
+            let store = ecoquest_infrastructure::PgStore::connect_lazy(&database_url, 2)
+                .map_err(|e| e.to_string())?;
+            store
+                .run_migrations()
+                .await
+                .map_err(|e| format!("migrations failed: {e}"))?;
+            println!("migrations applied");
+            Ok(())
+        }
+        Command::Seed(seed) => {
+            let store = ecoquest_infrastructure::PgStore::connect_lazy(&seed.database_url, 2)
+                .map_err(|e| e.to_string())?;
+            let path = seed_file_path(&seed.seed_file);
+            let report = ecoquest_infrastructure::seed::seed_full(
+                &store,
+                &seed.admin_email,
+                &seed.admin_username,
+                &seed.password,
+                &path,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            let created = report
+                .created
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let skipped = report
+                .skipped
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("seeding complete");
+            println!("created: {created}");
+            println!("skipped (already present): {skipped}");
+            Ok(())
+        }
         command => {
             let session = load_session(&cli.api_url)?;
             let api = Api::new(&cli.api_url, Some(session.cookie))?;
@@ -426,7 +503,9 @@ async fn run(cli: Cli) -> Result<(), String> {
                     false,
                 ),
                 Command::Stats => (Method::GET, "/api/impact".into(), None, false),
-                Command::Health | Command::Login(..) => unreachable!(),
+                Command::Health | Command::Login(..) | Command::Migrate | Command::Seed(..) => {
+                    unreachable!()
+                }
             };
             if confirmation {
                 confirm(if path.ends_with("/cancel") {
@@ -526,14 +605,10 @@ mod tests {
             let text = String::from_utf8_lossy(&request[..size]);
             assert!(text
                 .to_ascii_lowercase()
-                .contains("cookie: ecoquest_access=token"));
+                .contains("cookie: eq_access=token"));
             stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}").await.unwrap();
         });
-        let api = Api::new(
-            &format!("http://{address}"),
-            Some("ecoquest_access=token".into()),
-        )
-        .unwrap();
+        let api = Api::new(&format!("http://{address}"), Some("eq_access=token".into())).unwrap();
         assert_eq!(
             api.call(Method::GET, "/api/auth/me", None).await.unwrap()["ok"],
             true

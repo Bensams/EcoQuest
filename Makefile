@@ -1,4 +1,4 @@
-.PHONY: help setup db-up db-down db-logs api cli-health seed demo-reset demo fmt fmt-check lint test build web-install web-dev web-lint web-build ci
+.PHONY: help setup db-up db-down db-logs api cli-health migrate seed reset demo-reset demo fmt fmt-check lint test build web-install web-dev web-lint web-build ci
 
 help:
 	@echo "setup      - copy .env.example to .env and install web deps"
@@ -6,6 +6,9 @@ help:
 	@echo "db-down    - stop PostgreSQL"
 	@echo "api        - run the API (requires db-up)"
 	@echo "cli-health - query /api/health through the CLI"
+	@echo "migrate    - apply pending database migrations"
+	@echo "seed       - create accounts and load the full demo dataset"
+	@echo "reset      - wipe all data (drop schema), migrate and re-seed"
 	@echo "fmt/lint/test/build - Rust checks"
 	@echo "web-dev/web-lint/web-build - frontend tasks"
 	@echo "ci         - everything CI runs"
@@ -29,13 +32,24 @@ api:
 cli-health:
 	cargo run -p ecoquest-cli -- health
 
-# Reads DATABASE_URL and SEED_* from .env. Lives with the API, not the CLI:
-# the CLI never opens a database connection, and the first ADMIN cannot be
-# created over HTTP.
+# Direct database access; no API required.
+migrate:
+	cargo run -p ecoquest-cli -- migrate
+
+# Reads DATABASE_URL and SEED_* from .env. Idempotent: re-running never
+# overwrites existing accounts or demo data.
 seed:
 	cargo run -p ecoquest-api --bin seed
 
 # Development/test only. reset destroys all local data.
+reset:
+	docker compose exec postgres psql -U ecoquest -d ecoquest -c "DROP SCHEMA public CASCADE"
+	docker compose exec postgres psql -U ecoquest -d ecoquest -c "CREATE SCHEMA public"
+	docker compose exec postgres psql -U ecoquest -d ecoquest -c "GRANT ALL ON SCHEMA public TO ecoquest"
+	$(MAKE) migrate
+	$(MAKE) seed
+
+# Development/test only. legacy Windows helpers.
 demo-reset:
 	APP_ENV=development powershell -ExecutionPolicy Bypass -File scripts/reset-demo.ps1 -Force
 

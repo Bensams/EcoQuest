@@ -162,8 +162,8 @@ impl CertificateStore for PgCertificateStore {
         participation_id: Uuid,
         requester_id: Uuid,
     ) -> AppResult<Option<Certificate>> {
-        // Access is limited to the participant or a member of the hosting organization.
-        let sql = format!("{SELECT_CERTIFICATE} WHERE c.participation_id=$1 AND (c.user_id=$2 OR EXISTS (SELECT 1 FROM organization_members m WHERE m.organization_id=c.organization_id AND m.user_id=$2))");
+        // Access is limited to the participant or the owner of the hosting organization.
+        let sql = format!("{SELECT_CERTIFICATE} WHERE c.participation_id=$1 AND (c.user_id=$2 OR EXISTS (SELECT 1 FROM organizations o WHERE o.id=c.organization_id AND o.owner_id=$2))");
         sqlx::query(&sql)
             .bind(participation_id)
             .bind(requester_id)
@@ -188,7 +188,7 @@ impl CertificateStore for PgCertificateStore {
     }
 
     async fn organization_status(&self, user_id: Uuid) -> AppResult<Vec<OrganizationStatus>> {
-        sqlx::query("SELECT o.id,o.name,m.member_role,o.verification_status::text AS verification_status,o.reviewed_at FROM organization_members m JOIN organizations o ON o.id=m.organization_id WHERE m.user_id=$1 ORDER BY o.name")
+        sqlx::query("SELECT o.id,o.name,o.verification_status::text AS verification_status,o.reviewed_at FROM organizations o WHERE o.owner_id=$1 ORDER BY o.name")
             .bind(user_id)
             .fetch_all(&self.pool)
             .await
@@ -198,11 +198,22 @@ impl CertificateStore for PgCertificateStore {
                 Ok(OrganizationStatus {
                     organization_id: row.try_get("id").map_err(db_err)?,
                     name: row.try_get("name").map_err(db_err)?,
-                    member_role: row.try_get("member_role").map_err(db_err)?,
                     verification_status: row.try_get("verification_status").map_err(db_err)?,
                     reviewed_at: row.try_get("reviewed_at").map_err(db_err)?,
                 })
             })
+            .collect()
+    }
+
+    async fn list_for_user(&self, user_id: Uuid) -> AppResult<Vec<Certificate>> {
+        let sql = format!("{SELECT_CERTIFICATE} WHERE c.user_id=$1 ORDER BY c.issued_at DESC");
+        sqlx::query(&sql)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db_err)?
+            .iter()
+            .map(row_to_certificate)
             .collect()
     }
 }

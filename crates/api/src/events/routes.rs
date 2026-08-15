@@ -13,11 +13,7 @@ use qrcode::{render::svg, QrCode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    auth::{AuthUser, OrganizationUser},
-    state::AppState,
-    ApiError,
-};
+use crate::{auth::AuthUser, state::AppState, ApiError};
 
 #[derive(Debug, Deserialize)]
 pub struct EventInput {
@@ -77,7 +73,11 @@ struct QrResponse {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/events", get(browse))
-        .route("/api/organizations/:organization_id/events", post(create))
+        .route("/api/me/activities", get(my_activities))
+        .route(
+            "/api/organizations/:organization_id/events",
+            get(list_organization_events).post(create),
+        )
         .route("/api/events/:event_id", get(detail).put(update))
         .route("/api/events/:event_id/publish", post(publish))
         .route("/api/events/:event_id/activate", post(activate))
@@ -101,6 +101,23 @@ async fn browse(
 ) -> Result<Json<Vec<ecoquest_application::events::Event>>, ApiError> {
     Ok(Json(s.event_service()?.browse().await?))
 }
+async fn my_activities(
+    State(s): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Vec<ecoquest_application::events::Activity>>, ApiError> {
+    Ok(Json(s.event_service()?.my_activities(user.id).await?))
+}
+async fn list_organization_events(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(organization_id): Path<Uuid>,
+) -> Result<Json<Vec<ecoquest_application::events::Event>>, ApiError> {
+    Ok(Json(
+        s.event_service()?
+            .list_for_organization(organization_id, user.id)
+            .await?,
+    ))
+}
 async fn detail(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
@@ -109,7 +126,7 @@ async fn detail(
 }
 async fn create(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(organization_id): Path<Uuid>,
     Json(v): Json<EventInput>,
 ) -> Result<(StatusCode, Json<ecoquest_application::events::Event>), ApiError> {
@@ -132,7 +149,7 @@ async fn create(
 }
 async fn update(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
     Json(v): Json<UpdateInput>,
 ) -> Result<Json<ecoquest_application::events::Event>, ApiError> {
@@ -151,7 +168,7 @@ async fn update(
 }
 async fn publish(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     s.event_service()?.publish(id, user.id).await?;
@@ -159,7 +176,7 @@ async fn publish(
 }
 async fn activate(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     s.event_service()?.activate(id, user.id).await?;
@@ -167,7 +184,7 @@ async fn activate(
 }
 async fn cancel(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     s.event_service()?.cancel(id, user.id).await?;
@@ -191,14 +208,14 @@ async fn join(
 }
 async fn participants(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ecoquest_application::events::Participation>>, ApiError> {
     Ok(Json(s.event_service()?.participants(id, user.id).await?))
 }
 async fn verify_participants(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(event_id): Path<Uuid>,
     Json(input): Json<VerificationInput>,
 ) -> Result<Json<VerificationBatchResponse>, ApiError> {
@@ -219,7 +236,7 @@ async fn verify_participants(
 }
 async fn reject_participants(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(event_id): Path<Uuid>,
     Json(input): Json<VerificationInput>,
 ) -> Result<Json<VerificationBatchResponse>, ApiError> {
@@ -240,7 +257,7 @@ async fn reject_participants(
 }
 async fn rotate_qr(
     State(s): State<AppState>,
-    OrganizationUser(user): OrganizationUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
     Json(v): Json<QrInput>,
 ) -> Result<Json<QrResponse>, ApiError> {

@@ -1,6 +1,7 @@
 //! EcoQuest HTTP API (Axum).
 
 pub mod achievements;
+pub mod admin;
 pub mod auth;
 pub mod certificates;
 pub mod config;
@@ -8,6 +9,7 @@ pub mod error;
 pub mod events;
 pub mod health;
 pub mod impact;
+pub mod organizations;
 pub mod state;
 pub mod telemetry;
 
@@ -60,9 +62,11 @@ pub fn router(state: AppState, allowed_origins: &[String]) -> Router {
         .route("/api/health", get(health::health))
         .merge(auth::routes())
         .merge(achievements::routes())
+        .merge(admin::router())
         .merge(events::routes())
         .merge(impact::routes())
         .merge(certificates::routes())
+        .merge(organizations::routes())
         .layer(cors)
         .layer(axum::middleware::from_fn(security_and_request_id))
         .layer(TraceLayer::new_for_http())

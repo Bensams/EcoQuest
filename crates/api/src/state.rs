@@ -3,8 +3,8 @@
 use std::{net::IpAddr, sync::Arc};
 
 use ecoquest_application::{
-    achievements::AchievementService, auth::AuthService, events::EventService, CertificateService,
-    HealthProbe, ImpactService,
+    achievements::AchievementService, admin::AdminService, auth::AuthService, events::EventService,
+    organizations::OrganizationService, CertificateService, HealthProbe, ImpactService,
 };
 
 use crate::{auth::rate_limit::RateLimiter, ApiError};
@@ -24,10 +24,16 @@ pub struct AppState {
     pub achievements: Option<Arc<AchievementService>>,
     /// Phase 5 certificate issuance and verification use cases.
     pub certificates: Option<Arc<CertificateService>>,
+    /// Platform administration use cases.
+    pub admin: Option<Arc<AdminService>>,
+    /// Organization application use cases.
+    pub organizations: Option<Arc<OrganizationService>>,
     /// Rate limiter guarding authentication endpoints.
     pub auth_rate_limiter: Arc<RateLimiter>,
     /// Whether session cookies carry the `Secure` attribute.
     pub cookies_secure: bool,
+    /// Public origin of the web client, used to build links sent to users.
+    pub web_base_url: String,
 }
 
 impl AppState {
@@ -46,9 +52,19 @@ impl AppState {
             impact: None,
             achievements: None,
             certificates: None,
+            admin: None,
+            organizations: None,
             auth_rate_limiter,
             cookies_secure,
+            web_base_url: "http://localhost:5173".to_string(),
         }
+    }
+
+    /// Sets the public origin of the web client used when building user-facing links.
+    #[must_use]
+    pub fn with_web_base_url(mut self, web_base_url: impl Into<String>) -> Self {
+        self.web_base_url = web_base_url.into();
+        self
     }
 
     /// Attaches Phase 3 mission use cases.
@@ -77,6 +93,34 @@ impl AppState {
     pub fn with_certificates(mut self, certificates: Arc<CertificateService>) -> Self {
         self.certificates = Some(certificates);
         self
+    }
+
+    /// Attaches administration use cases.
+    #[must_use]
+    pub fn with_admin(mut self, admin: Arc<AdminService>) -> Self {
+        self.admin = Some(admin);
+        self
+    }
+
+    /// Attaches organization application use cases.
+    #[must_use]
+    pub fn with_organizations(mut self, organizations: Arc<OrganizationService>) -> Self {
+        self.organizations = Some(organizations);
+        self
+    }
+
+    /// Gets administration use cases or returns a safe configuration error.
+    pub fn admin_service(&self) -> Result<&Arc<AdminService>, ApiError> {
+        self.admin
+            .as_ref()
+            .ok_or_else(|| ApiError::ServiceUnavailable("administration is not configured".into()))
+    }
+
+    /// Gets organization application use cases or returns a safe configuration error.
+    pub fn organization_service(&self) -> Result<&Arc<OrganizationService>, ApiError> {
+        self.organizations
+            .as_ref()
+            .ok_or_else(|| ApiError::ServiceUnavailable("organizations are not configured".into()))
     }
 
     /// Gets certificate use cases or returns a safe configuration error.

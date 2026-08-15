@@ -5,12 +5,15 @@ use std::sync::Arc;
 use ecoquest_api::{auth::RateLimiter, router, telemetry, AppState, Config};
 use ecoquest_application::{
     achievements::{AchievementService, MockBlockchainAdapter},
+    admin::AdminService,
     auth::{AuthService, PasswordHasherService, TokenService},
     events::EventService,
+    organizations::OrganizationService,
     CertificateService, ImpactService,
 };
 use ecoquest_infrastructure::{
-    PgAchievementStore, PgAuthStore, PgCertificateStore, PgEventStore, PgImpactStore, PgStore,
+    PgAchievementStore, PgAdminStore, PgAuthStore, PgCertificateStore, PgEventStore, PgImpactStore,
+    PgOrganizationStore, PgStore,
 };
 
 #[tokio::main]
@@ -42,6 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let certificates = Arc::new(CertificateService::new(Arc::new(PgCertificateStore::new(
         &store,
     ))));
+    let admin = Arc::new(AdminService::new(Arc::new(PgAdminStore::new(&store))));
+    let organizations = Arc::new(OrganizationService::new(Arc::new(
+        PgOrganizationStore::new(&store),
+    )));
     let worker = achievements.clone();
     tokio::spawn(async move {
         loop {
@@ -75,7 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_events(Arc::new(events))
     .with_impact(Arc::new(impact))
     .with_achievements(achievements)
-    .with_certificates(certificates);
+    .with_certificates(certificates)
+    .with_admin(admin)
+    .with_organizations(organizations)
+    .with_web_base_url(config.web_base_url.clone());
 
     let app = router(state, &config.cors_allowed_origins);
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;

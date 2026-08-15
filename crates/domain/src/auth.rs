@@ -12,10 +12,9 @@ use crate::{DomainError, DomainResult};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Role {
-    /// Regular participant.
-    Player,
-    /// Member of a verified organization; runs events.
-    OrganizationMember,
+    /// Regular platform user: participates in missions and can create an
+    /// organization application.
+    User,
     /// Platform administrator.
     Admin,
 }
@@ -25,18 +24,9 @@ impl Role {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Player => "PLAYER",
-            Self::OrganizationMember => "ORGANIZATION_MEMBER",
+            Self::User => "USER",
             Self::Admin => "ADMIN",
         }
-    }
-
-    /// Roles a user may choose at self-registration.
-    ///
-    /// `ADMIN` is deliberately excluded: privilege is granted, never requested.
-    #[must_use]
-    pub const fn is_self_assignable(self) -> bool {
-        matches!(self, Self::Player | Self::OrganizationMember)
     }
 
     /// Whether this role satisfies a requirement for `required`.
@@ -59,9 +49,10 @@ impl FromStr for Role {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "PLAYER" => Ok(Self::Player),
-            "ORGANIZATION_MEMBER" => Ok(Self::OrganizationMember),
+            "USER" => Ok(Self::User),
             "ADMIN" => Ok(Self::Admin),
+            // Legacy values can linger in very old sessions; never panic on parse.
+            "PLAYER" | "ORGANIZATION_MEMBER" => Ok(Self::User),
             other => Err(DomainError::Validation(format!("unknown role: {other}"))),
         }
     }
@@ -122,6 +113,8 @@ pub enum VerificationStatus {
     Rejected,
     /// Previously approved, now blocked.
     Suspended,
+    /// Soft-closed; not currently operating.
+    Inactive,
 }
 
 impl VerificationStatus {
@@ -133,6 +126,7 @@ impl VerificationStatus {
             Self::Approved => "APPROVED",
             Self::Rejected => "REJECTED",
             Self::Suspended => "SUSPENDED",
+            Self::Inactive => "INACTIVE",
         }
     }
 }
@@ -146,6 +140,7 @@ impl FromStr for VerificationStatus {
             "APPROVED" => Ok(Self::Approved),
             "REJECTED" => Ok(Self::Rejected),
             "SUSPENDED" => Ok(Self::Suspended),
+            "INACTIVE" => Ok(Self::Inactive),
             other => Err(DomainError::Validation(format!(
                 "unknown verification status: {other}"
             ))),
@@ -305,23 +300,14 @@ mod tests {
 
     #[test]
     fn admin_satisfies_every_role() {
-        assert!(Role::Admin.satisfies(Role::Player));
-        assert!(Role::Admin.satisfies(Role::OrganizationMember));
-        assert!(!Role::Player.satisfies(Role::Admin));
-        assert!(!Role::Player.satisfies(Role::OrganizationMember));
-        assert!(Role::Player.satisfies(Role::Player));
-    }
-
-    #[test]
-    fn admin_role_cannot_be_self_assigned() {
-        assert!(!Role::Admin.is_self_assignable());
-        assert!(Role::Player.is_self_assignable());
-        assert!(Role::OrganizationMember.is_self_assignable());
+        assert!(Role::Admin.satisfies(Role::User));
+        assert!(!Role::User.satisfies(Role::Admin));
+        assert!(Role::User.satisfies(Role::User));
     }
 
     #[test]
     fn roles_round_trip_through_strings() {
-        for role in [Role::Player, Role::OrganizationMember, Role::Admin] {
+        for role in [Role::User, Role::Admin] {
             assert_eq!(role.as_str().parse::<Role>().expect("parse"), role);
         }
         assert!("SUPERUSER".parse::<Role>().is_err());

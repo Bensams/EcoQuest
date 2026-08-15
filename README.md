@@ -6,8 +6,9 @@ Eco Points, progression, certificates, and (later) a blockchain achievement.
 
 **Status: feature complete except on-chain minting.** Accounts, organizations, events,
 QR check-in, verification, Eco Points, impact dashboards, certificates, and wallet
-linking all work end to end against PostgreSQL. Blockchain minting is still a mock
-adapter — see [Blockchain status](#blockchain-status).
+linking all work end to end against PostgreSQL. Organizer and administrator consoles run
+in the browser. Blockchain minting is still a mock adapter — see
+[Blockchain status](#blockchain-status).
 
 | Area                     | State    | Notes                                                     |
 | ------------------------ | -------- | --------------------------------------------------------- |
@@ -23,8 +24,9 @@ adapter — see [Blockchain status](#blockchain-status).
 | Wallet linking           | Done     | Ed25519 ownership proof, Stellar and Solana addresses       |
 | Web player sign-in       | Done     | Register, sign in and sign out in the client                |
 | On-chain minting         | **Mock** | No program deployed; no transaction is broadcast            |
-| Web organizer console    | Missing  | Publish, activate, QR, and verify are CLI-only              |
-| Web certificate view     | Missing  | API routes exist and are unused by the client               |
+| Web organizer console    | Done     | Create, publish, QR rotation, and verify/reject in browser   |
+| Web certificate view     | Done     | Player certificate list with public verification links       |
+| Web admin console        | Done     | Organization review, user/event moderation, audited actions  |
 
 ## Blockchain status
 

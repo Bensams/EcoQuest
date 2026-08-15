@@ -97,40 +97,22 @@ impl FromRequestParts<AppState> for AdminUser {
     }
 }
 
-/// Extractor that requires organization membership (or admin).
-#[derive(Debug, Clone, Copy)]
-pub struct OrganizationUser(pub AuthUser);
-
-#[async_trait::async_trait]
-impl FromRequestParts<AppState> for OrganizationUser {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let user = AuthUser::from_request_parts(parts, state).await?;
-        user.require_role(Role::OrganizationMember)?;
-        Ok(Self(user))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn require_role_allows_exact_match_and_admin() {
-        let player = AuthUser {
+        let user = AuthUser {
             id: Uuid::new_v4(),
-            role: Role::Player,
+            role: Role::User,
         };
         let admin = AuthUser {
             id: Uuid::new_v4(),
             role: Role::Admin,
         };
-        assert!(player.require_role(Role::Player).is_ok());
-        assert!(player.require_role(Role::Admin).is_err());
-        assert!(admin.require_role(Role::OrganizationMember).is_ok());
+        assert!(user.require_role(Role::User).is_ok());
+        assert!(user.require_role(Role::Admin).is_err());
+        assert!(admin.require_role(Role::User).is_ok());
     }
 }

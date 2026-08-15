@@ -114,7 +114,7 @@ above, or use WSL for the `make` targets.
 
 ```powershell
 cargo run -p ecoquest-cli -- health
-cargo run -p ecoquest-cli -- login --email organizer@ecoquest.test --password 'Example-password-123!'
+cargo run -p ecoquest-cli -- login --email ben@ecoquest.test --password "$env:SEED_PASSWORD"
 cargo run -p ecoquest-cli -- me
 cargo run -p ecoquest-cli -- organizations status
 cargo run -p ecoquest-cli -- events list
@@ -135,19 +135,23 @@ generate-qr → participants → verify.
 
 `health` needs no session. `verify` and `events cancel` ask for confirmation, because one awards points and can issue a certificate and the other revokes a live check-in code. Use `--yes` only in reviewed automation. All commands accept global `--json` for scripting; default output is readable key/value tables.
 
-## Competition demo
+## Seed demo data
 
-Development/test only. Reset deletes every local database row. API must be running after reset so it can apply migrations.
+Development/test only. `make seed` (or `cargo run -p ecoquest-cli -- seed`) creates the
+accounts below plus the full demo dataset from `scripts/seed-full.sql` — approved and
+pending organizations, COMPLETED/PUBLISHED/DRAFT events, a verified participation, point
+and impact ledgers, a certificate, and a Solana achievement. Re-running never overwrites
+existing accounts or data. `make reset` wipes everything (drop schema) then migrate + seed.
 
-```powershell
-$env:APP_ENV='development'
-powershell -ExecutionPolicy Bypass -File .\scripts\reset-demo.ps1 -Force
-cargo run -p ecoquest-api
-# second shell
-powershell -ExecutionPolicy Bypass -File .\scripts\e2e-demo.ps1
-```
+| Username    | Email                 | Role                                              |
+| ----------- | --------------------- | ------------------------------------------------- |
+| `eco_admin` | admin@ecoquest.test   | Platform admin (reviews organizations)            |
+| `alex`      | alex@ecoquest.test    | Player with a pending organization application    |
+| `ben`       | ben@ecoquest.test     | Player, owner of the approved org and its events  |
+| `erwin`     | erwin@ecoquest.test   | Player, verified participant on a completed event |
 
-Demo asserts approved Butuan Environmental Organization, organizer-created Butuan Coastal Cleanup, QR check-in, Alex receiving exactly 1,000 Eco Points, 12 kg waste impact, Ocean Guardian eligibility, and durable certificate issuance queue. See `docs/demo-fallback.md`, `docs/api.md`, `docs/threat-model.md`, and `docs/backup-restore.md`.
+All accounts share one password: `SEED_PASSWORD` from `.env` (this repo's `.env` sets it to
+`qwerty123`; the `.env.example` default is `ChangeMe-Local-1234`).
 
 Certificate issuance is asynchronous: verification queues the job and a background worker
 writes the certificate, usually within a second. `GET /api/certificates/public/{hash}`

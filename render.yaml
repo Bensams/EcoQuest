@@ -1,0 +1,45 @@
+# Render blueprint for the API. Create the service with
+# Dashboard > New > Blueprint, pointed at this repository.
+#
+# The database deliberately lives on Neon rather than here: Render's free
+# Postgres instances expire 30 days after creation, which would silently take
+# the app down a month after the demo.
+services:
+  - type: web
+    name: ecoquest-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: singapore
+    # Render decides a deploy succeeded once this answers, so a bad
+    # DATABASE_URL fails the release instead of going live broken.
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # sync: false means "prompt me, never store in git". Both of these are
+      # secrets and must be entered in the dashboard.
+      - key: DATABASE_URL
+        sync: false
+      # Must be at least 32 characters; the API refuses to start otherwise.
+      # Generate with: openssl rand -base64 48
+      - key: JWT_SECRET
+        sync: false
+      # The public client origin. Password-reset and certificate links are
+      # built from it, so it has to be the deployed site.
+      - key: WEB_BASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: COOKIES_SECURE
+        value: "true"
+      # A free instance is small and Neon's free tier is connection-limited,
+      # so keep the pool tight.
+      - key: DATABASE_MAX_CONNECTIONS
+        value: "5"
+      - key: RUST_LOG
+        value: info
+      - key: LOG_JSON
+        value: "true"
+      # PORT is injected by Render; the API falls back to it when
+      # API_BIND_ADDR is unset, so API_BIND_ADDR must stay unset here.

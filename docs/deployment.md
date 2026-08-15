@@ -1,13 +1,14 @@
 # Deployment
 
-Free-tier topology: **Vercel** serves the client and proxies the API, **Google
-Cloud Run** runs the Rust server, **Neon** hosts PostgreSQL.
+Free-tier topology: **Vercel** serves the client and proxies the API, **Render**
+runs the Rust server, **Neon** hosts PostgreSQL. None of the three requires a
+credit card to sign up.
 
 ```
 browser ──► https://<project>.vercel.app       (client, static)
                  │  /api/*  proxied server-side, same origin to the browser
                  ▼
-            https://ecoquest-api-….run.app     (Cloud Run, scales to zero)
+            https://ecoquest-api.onrender.com  (Render, sleeps when idle)
                  │
                  ▼
             Neon PostgreSQL                    (managed, TLS)
@@ -32,9 +33,13 @@ locally. Consequences worth knowing:
 
 ## 1. Database (Neon)
 
-Create a project at neon.tech and copy the **pooled** connection string. Cloud
-Run scales to zero and reconnects often, so connections should terminate at
-Neon's pooler rather than directly at the database.
+Create a project at neon.tech and copy the **pooled** connection string. The
+API sleeps and reconnects often on a free instance, so connections should
+terminate at Neon's pooler rather than directly at the database.
+
+Render offers its own free Postgres, but those instances **expire 30 days after
+creation**, which would take the app down a month after the demo. Neon's free
+plan does not expire.
 
 Append TLS enforcement if it is not already present:
 
@@ -51,7 +56,7 @@ same image:
 docker run --rm -e DATABASE_URL="…" -e SEED_ADMIN_EMAIL="…" -e SEED_ADMIN_USERNAME="…" -e SEED_PASSWORD="…" ecoquest-api seed
 ```
 
-## 2. API (Cloud Run)
+## 2. API (Render)
 
 Generate a real signing secret first — the value in `.env.example` is a
 placeholder and the API rejects anything under 32 characters:
@@ -60,40 +65,38 @@ placeholder and the API rejects anything under 32 characters:
 openssl rand -base64 48
 ```
 
-Build and deploy from the repository root:
+In the Render dashboard choose **New → Blueprint** and point it at this
+repository. Render reads [`render.yaml`](../render.yaml), which pins the free
+instance type, the Docker runtime, and `/api/health` as the health check — a
+bad `DATABASE_URL` then fails the release instead of going live broken.
 
-```bash
-gcloud run deploy ecoquest-api --source . --region asia-southeast1 --allow-unauthenticated
-```
-
-`--allow-unauthenticated` refers to Cloud Run's own IAM layer, not the
-application: the service must be publicly reachable so Vercel can proxy to it.
-The app's own authentication is unaffected.
-
-Then set the environment. Keep `JWT_SECRET` and `DATABASE_URL` in Secret
-Manager rather than plain variables:
+Render prompts for the values marked `sync: false`:
 
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | the Neon pooled URL |
 | `JWT_SECRET` | the generated secret, ≥32 characters |
-| `COOKIES_SECURE` | `true` |
 | `WEB_BASE_URL` | `https://<project>.vercel.app` |
 | `CORS_ALLOWED_ORIGINS` | `https://<project>.vercel.app` |
-| `DATABASE_MAX_CONNECTIONS` | `5` |
-| `RUST_LOG` | `info` |
-| `LOG_JSON` | `true` |
 
-`WEB_BASE_URL` is what password-reset and certificate links point at, so it must
-be the public site rather than a developer machine. `CORS_ALLOWED_ORIGINS` is
-not needed by the browser under this topology, but setting it keeps direct
-non-proxied callers honest.
+The two Vercel URLs are unknown until step 3, so put a placeholder in now and
+correct them at the end. `WEB_BASE_URL` is what password-reset and certificate
+links point at, so it must be the deployed site rather than a developer
+machine. `CORS_ALLOWED_ORIGINS` is not needed by the browser under this
+topology, but setting it keeps direct non-proxied callers honest.
 
-Do **not** set `API_BIND_ADDR`. Cloud Run assigns the port through `PORT`, and
-the config falls back to it ([`crates/api/src/config.rs`](../crates/api/src/config.rs));
-an explicit bind address would override that and the service would fail to
-start. Keep `DATABASE_MAX_CONNECTIONS` small — every scaled-out instance opens
-its own pool against a free-tier database.
+Do **not** add `API_BIND_ADDR`. Render assigns the port through `PORT`, and the
+config falls back to it ([`crates/api/src/config.rs`](../crates/api/src/config.rs));
+an explicit bind address would override that and the service would never
+answer.
+
+The first build compiles the whole Rust workspace and takes several minutes.
+When it finishes, Render shows the service URL, `https://ecoquest-api.onrender.com`
+or similar. Confirm it directly before wiring the client to it:
+
+```bash
+curl -s https://<service>.onrender.com/api/health
+```
 
 ## 3. Client (Vercel)
 
@@ -122,9 +125,8 @@ Add three repository **secrets**:
 
 And one repository **variable**:
 
-- `API_ORIGIN` — the Cloud Run origin, e.g.
-  `https://ecoquest-api-abc123-as.a.run.app`, with no trailing slash and no
-  `/api` suffix
+- `API_ORIGIN` — the Render origin, e.g. `https://ecoquest-api.onrender.com`,
+  with no trailing slash and no `/api` suffix
 
 `API_ORIGIN` is deliberately a CI variable rather than a checked-in
 `vercel.json`: routing is generated at deploy time from a single source, so
@@ -144,9 +146,16 @@ It writes a Vercel Build Output API v3 bundle:
   static/          the contents of web/dist
 ```
 
-Route order is load-bearing. `/api/*` proxies to Cloud Run first; then
+Route order is load-bearing. `/api/*` proxies to Render first; then
 `filesystem` serves real files; anything left over falls back to `index.html`,
 without which reloading a deep link such as `/app/missions/<id>` would 404.
+
+## 4. Close the loop
+
+The two services each need the other's URL, so one of them is necessarily
+configured after the fact. Once Vercel has published, go back to Render and
+correct `WEB_BASE_URL` and `CORS_ALLOWED_ORIGINS` to the real
+`https://<project>.vercel.app`. Saving them restarts the service.
 
 ## Verifying a deploy
 
@@ -161,11 +170,18 @@ exercises the cookie path, the second the SPA fallback.
 
 ## Free-tier caveats
 
-- **Cloud Run scales to zero.** The first request after idle pays a cold start
-  while the process boots and reconnects. Setting a minimum instance of 1
-  avoids it and is no longer free.
+- **Render sleeps a free service after 15 minutes idle**, and waking it takes
+  about a minute, during which visitors see a Render loading page. This is the
+  sharpest edge of the no-card setup. Before a demo, open the health endpoint
+  a couple of minutes early so the service is already awake.
+- **Free instance hours are capped at 750 per workspace per month**, enough for
+  one always-available service but not several.
 - **Neon auto-suspends** idle databases; the first query after suspension is
   slow.
+- **Render's free Postgres expires 30 days after creation**, which is why the
+  database is on Neon.
+- Exceeding the free bandwidth or build-minute allowance suspends free services
+  for the rest of the month when no payment method is on file.
 - **Vercel's free tier is for non-commercial use.** If EcoQuest ever takes
   payments, that plan no longer covers it.
 - Free-tier terms change often. Confirm current limits before relying on them.
@@ -173,8 +189,9 @@ exercises the cookie path, the second the SPA fallback.
 ## Alternatives
 
 Any container host works for the API, since the image takes only
-`DATABASE_URL` and `PORT`: Fly.io and Koyeb keep a small instance warm,
-Render's free tier sleeps after ~15 minutes.
+`DATABASE_URL` and `PORT`. Google Cloud Run and Fly.io both hold a warm
+instance and start faster, but each requires a card on file even inside the
+free tier. Koyeb is the closest no-card alternative to Render.
 
 For the client, Netlify is an equivalent swap — the same proxy expressed as a
 `/api/* … 200!` line in `_redirects` — and Cloudflare Pages needs a Pages

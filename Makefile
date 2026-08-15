@@ -1,4 +1,4 @@
-.PHONY: help setup db-up db-down db-logs api cli-health migrate seed reset demo-reset demo fmt fmt-check lint test build web-install web-dev web-lint web-build ci
+.PHONY: help setup db-up db-down db-logs api cli-health migrate seed reset fmt fmt-check lint test build web-install web-dev web-lint web-build ci
 
 help:
 	@echo "setup      - copy .env.example to .env and install web deps"
@@ -48,13 +48,6 @@ reset:
 	docker compose exec postgres psql -U ecoquest -d ecoquest -c "GRANT ALL ON SCHEMA public TO ecoquest"
 	$(MAKE) migrate
 	$(MAKE) seed
-
-# Development/test only. legacy Windows helpers.
-demo-reset:
-	APP_ENV=development powershell -ExecutionPolicy Bypass -File scripts/reset-demo.ps1 -Force
-
-demo:
-	APP_ENV=development powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 
 fmt:
 	cargo fmt --all

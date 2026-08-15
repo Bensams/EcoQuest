@@ -2,7 +2,7 @@
 // pass /api/wallet/challenge + /api/wallet/verify with a real Ed25519 signature.
 // Usage: node scripts/wallet-check.mjs [api-url]
 const API = process.argv[2] ?? 'http://127.0.0.1:8080';
-const PASSWORD = 'Demo-password-1234';
+const PASSWORD = process.env.SEED_PASSWORD ?? 'ChangeMe-Local-1234';
 
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';

@@ -108,55 +108,39 @@ curl -s https://<service>.onrender.com/api/health
 
 ## 3. Client (Vercel)
 
-Create the project once from your machine, which writes the ids CI needs:
+Vercel deploys straight from GitHub: push to `main` and it builds and
+publishes. No CI step, no tokens, no secrets.
 
-```bash
-npx vercel@latest link
+Import the repository at vercel.com (**Add New → Project**). Vercel reads
+[`vercel.json`](../vercel.json) and needs no dashboard configuration — it
+carries the build command, the output directory, the `/api` proxy, and the SPA
+fallback.
+
+### The wasm question
+
+`npm run build` compiles `crates/game-wasm` to WebAssembly, which Vercel's
+build image cannot do: it has no Rust toolchain and no `wasm-bindgen`. Rather
+than move the build off-platform, the generated output in `web/public/game/`
+is **committed** (37 KB), and Vercel runs `npm run build:web`, which is the
+same build minus the wasm step.
+
+The cost of committing a generated artifact is that it can drift from its
+source. The CI web job guards against that: it rebuilds the wasm from
+`crates/game-wasm` and fails if the committed copy differs. So after changing
+that crate, run `npm run build:wasm` in `web/` and commit the result, or CI
+will tell you.
+
+### The API origin
+
+The proxy target lives in `vercel.json`:
+
+```json
+{ "source": "/api/:path*", "destination": "https://<service>.onrender.com/api/:path*" }
 ```
 
-That produces `.vercel/project.json` containing `orgId` and `projectId`. The
-directory is gitignored — it must never be committed.
-
-Deploys run in GitHub Actions
-([`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml))
-rather than Vercel's own build, because `npm run build` compiles
-`crates/game-wasm` to WebAssembly first and needs the Rust toolchain plus a
-`wasm-bindgen` matching the version pinned in `Cargo.lock`. The workflow
-uploads a finished bundle with `vercel deploy --prebuilt`, so Vercel builds
-nothing.
-
-Add three repository **secrets**:
-
-- `VERCEL_TOKEN` — a Vercel access token
-- `VERCEL_ORG_ID` — `orgId` from `.vercel/project.json`
-- `VERCEL_PROJECT_ID` — `projectId` from the same file
-
-And one repository **variable**:
-
-- `API_ORIGIN` — the Render origin, e.g. `https://ecoquest-api.onrender.com`,
-  with no trailing slash and no `/api` suffix
-
-`API_ORIGIN` is deliberately a CI variable rather than a checked-in
-`vercel.json`: routing is generated at deploy time from a single source, so
-there is no placeholder in the repository that can be forgotten. The workflow
-fails fast if the variable is unset.
-
-Pushes to `main` touching `web/`, `crates/game-wasm/`, or `Cargo.lock` then
-publish automatically; `workflow_dispatch` triggers a manual deploy.
-
-### What the workflow generates
-
-It writes a Vercel Build Output API v3 bundle:
-
-```
-.vercel/output/
-  config.json      routes: /api proxy, caching, security headers, SPA fallback
-  static/          the contents of web/dist
-```
-
-Route order is load-bearing. `/api/*` proxies to Render first; then
-`filesystem` serves real files; anything left over falls back to `index.html`,
-without which reloading a deep link such as `/app/missions/<id>` would 404.
+It is a public URL, not a secret, so keeping it in the repository is fine and
+makes the routing readable in one place. Update it if the Render service is
+ever renamed or replaced.
 
 ## 4. Close the loop
 

@@ -48,3 +48,13 @@ jobs:
       - run: npm install
       - run: npm run lint
       - run: npm run build
+      # web/public/game/ is committed so Vercel can build without Rust. The
+      # build above regenerates it, so any diff means the committed copy no
+      # longer matches crates/game-wasm and would ship stale behaviour.
+      - name: Check the committed wasm is up to date
+        run: |
+          if ! git diff --quiet -- public/game; then
+            echo "web/public/game is stale. Run 'npm run build:wasm' in web/ and commit the result."
+            git diff --stat -- public/game
+            exit 1
+          fi

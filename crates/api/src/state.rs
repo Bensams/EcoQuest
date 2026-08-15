@@ -32,6 +32,8 @@ pub struct AppState {
     pub auth_rate_limiter: Arc<RateLimiter>,
     /// Whether session cookies carry the `Secure` attribute.
     pub cookies_secure: bool,
+    /// Public origin of the web client, used to build links sent to users.
+    pub web_base_url: String,
 }
 
 impl AppState {
@@ -54,7 +56,15 @@ impl AppState {
             organizations: None,
             auth_rate_limiter,
             cookies_secure,
+            web_base_url: "http://localhost:5173".to_string(),
         }
+    }
+
+    /// Sets the public origin of the web client used when building user-facing links.
+    #[must_use]
+    pub fn with_web_base_url(mut self, web_base_url: impl Into<String>) -> Self {
+        self.web_base_url = web_base_url.into();
+        self
     }
 
     /// Attaches Phase 3 mission use cases.

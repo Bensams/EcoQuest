@@ -14,7 +14,10 @@ pub mod organizations;
 pub use achievements::{
     AchievementService, AchievementStore, BlockchainAdapter, MockBlockchainAdapter,
 };
-pub use admin::{AdminEvent, AdminOrganization, AdminService, AdminStore, AdminUser};
+pub use admin::{
+    AdminEvent, AdminListQuery, AdminOrganization, AdminService, AdminStore, AdminUser,
+    EventModeration, Page,
+};
 pub use auth::{AuthService, AuthStore, PasswordHasherService, TokenService};
 pub use certificates::{
     verification_hash, Certificate, CertificateData, CertificateService, CertificateStore,

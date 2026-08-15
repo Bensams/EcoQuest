@@ -1,5 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { QrCode } from 'lucide-react';
+import { LiveQrScanner } from '../../components/qr/LiveQrScanner';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
@@ -7,13 +8,8 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { Field, TextInput } from '../../components/ui/Field';
 import { post } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { createNativeQrDetector, decodeQrFromBitmapSource } from '../../lib/qr';
 import type { Participation } from '../../lib/types';
-
-type BarcodeDetectorLike = { detect(source: ImageBitmapSource): Promise<{ rawValue: string }[]> };
-
-declare global {
-  interface Window { BarcodeDetector?: new () => BarcodeDetectorLike }
-}
 
 export function CheckInPage() {
   const { user } = useAuth();
@@ -31,6 +27,7 @@ export function CheckInPage() {
     setError(null);
     setResult(null);
     setPending(true);
+    setCode(value.trim());
     try {
       const participation = await post<Participation>('/api/check-in', { code: value.trim() });
       setResult(
@@ -53,16 +50,13 @@ export function CheckInPage() {
 
   const scanImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
-    if (!window.BarcodeDetector) {
-      setError('Camera scanning is unavailable here — type the code from the QR instead.');
-      return;
-    }
     try {
-      const values = await new window.BarcodeDetector().detect(await createImageBitmap(file));
-      if (!values[0]) throw new Error('No QR code found in that image.');
-      setCode(values[0].rawValue);
-      setError(null);
+      const detector = await createNativeQrDetector();
+      const value = await decodeQrFromBitmapSource(file, detector);
+      if (!value) throw new Error('No QR code found in that image.');
+      await checkIn(value);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read the QR image.');
     }
@@ -90,10 +84,13 @@ export function CheckInPage() {
           </form>
         </Card>
         <Card>
-          <h2 className="mb-2 text-sm font-semibold text-forest">Scan a QR with your camera</h2>
-          <p className="mb-4 text-sm text-forest-muted">Capture the organizer's QR code or upload a screenshot.</p>
-          <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-sage bg-white px-4 py-2 text-sm font-medium text-forest transition-colors hover:bg-sage-soft">
-            Choose image or scan
+          <h2 className="mb-2 text-sm font-semibold text-forest">Live camera scan</h2>
+          <p className="mb-4 text-sm text-forest-muted">
+            Point the camera at the organizer's QR. A match checks you in automatically.
+          </p>
+          <LiveQrScanner paused={pending} onDetect={(value) => void checkIn(value)} />
+          <label className="mt-4 inline-flex cursor-pointer items-center justify-center rounded-lg border border-sage bg-white px-4 py-2 text-sm font-medium text-forest transition-colors hover:bg-sage-soft">
+            Upload a QR image
             <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => void scanImage(e)} />
           </label>
         </Card>

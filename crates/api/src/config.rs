@@ -13,6 +13,8 @@ pub struct Config {
     pub database_max_connections: u32,
     /// Exact origins allowed by CORS.
     pub cors_allowed_origins: Vec<String>,
+    /// Public origin of the web client, used to build links sent to users.
+    pub web_base_url: String,
     /// `tracing` filter directive, e.g. `info,ecoquest_api=debug`.
     pub log_filter: String,
     /// Emit JSON logs instead of human readable ones.
@@ -67,12 +69,20 @@ impl Config {
                 name: "DATABASE_MAX_CONNECTIONS",
                 detail: e.to_string(),
             })?;
-        let cors_allowed_origins = optional("CORS_ALLOWED_ORIGINS")
+        let cors_allowed_origins: Vec<String> = optional("CORS_ALLOWED_ORIGINS")
             .unwrap_or_else(|| "http://localhost:5173".to_string())
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
+
+        // Password-reset and certificate links are handed to real people, so they
+        // must point at the deployed client rather than a developer's machine.
+        let web_base_url = optional("WEB_BASE_URL")
+            .or_else(|| cors_allowed_origins.first().cloned())
+            .unwrap_or_else(|| "http://localhost:5173".to_string())
+            .trim_end_matches('/')
+            .to_string();
 
         let jwt_secret = required("JWT_SECRET")?;
         if jwt_secret.len() < 32 {
@@ -87,6 +97,7 @@ impl Config {
             database_url,
             database_max_connections,
             cors_allowed_origins,
+            web_base_url,
             log_filter: optional("RUST_LOG").unwrap_or_else(|| "info".to_string()),
             log_json: optional("LOG_JSON").is_some_and(|v| v == "1" || v == "true"),
             jwt_secret,

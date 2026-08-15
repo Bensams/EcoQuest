@@ -17,6 +17,8 @@ const eventStatusToTone: Record<EventStatus, BadgeTone> = {
   ACTIVE: 'success',
   COMPLETED: 'success',
   CANCELLED: 'destructive',
+  SUSPENDED: 'warning',
+  ARCHIVED: 'muted',
 };
 
 const participationStatusToTone: Record<ParticipationStatus, BadgeTone> = {
@@ -32,6 +34,7 @@ const verificationToTone: Record<VerificationStatus, BadgeTone> = {
   APPROVED: 'success',
   REJECTED: 'destructive',
   SUSPENDED: 'destructive',
+  INACTIVE: 'muted',
 };
 
 const statusLabels: Record<string, string> = {
@@ -40,13 +43,16 @@ const statusLabels: Record<string, string> = {
   ACTIVE: 'Active',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
+  SUSPENDED: 'Suspended',
+  ARCHIVED: 'Archived',
+  INACTIVE: 'Inactive',
   REGISTERED: 'Registered',
   PENDING_VERIFICATION: 'Pending verification',
   VERIFIED: 'Verified',
   REJECTED: 'Rejected',
   PENDING: 'Pending review',
   APPROVED: 'Approved',
-  SUSPENDED: 'Suspended',
+  DELETED: 'Deactivated',
 };
 
 export function activityLabel(type: string): string {

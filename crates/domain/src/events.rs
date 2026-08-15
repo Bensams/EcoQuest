@@ -62,6 +62,8 @@ pub enum EventStatus {
     Active,
     Completed,
     Cancelled,
+    Suspended,
+    Archived,
 }
 
 impl EventStatus {
@@ -73,6 +75,8 @@ impl EventStatus {
             Self::Active => "ACTIVE",
             Self::Completed => "COMPLETED",
             Self::Cancelled => "CANCELLED",
+            Self::Suspended => "SUSPENDED",
+            Self::Archived => "ARCHIVED",
         }
     }
 
@@ -107,6 +111,8 @@ impl FromStr for EventStatus {
             "ACTIVE" => Ok(Self::Active),
             "COMPLETED" => Ok(Self::Completed),
             "CANCELLED" => Ok(Self::Cancelled),
+            "SUSPENDED" => Ok(Self::Suspended),
+            "ARCHIVED" => Ok(Self::Archived),
             _ => Err(DomainError::Validation(format!(
                 "unknown event status: {value}"
             ))),

@@ -21,6 +21,10 @@ import { CreateOrganizationPage } from './pages/org/CreateOrganizationPage';
 import { OrgEventsPage } from './pages/org/OrgEventsPage';
 import { OrgEventDetailPage } from './pages/org/OrgEventDetailPage';
 import { AdminHomePage } from './pages/admin/AdminHomePage';
+import { AdminOrganizationsPage } from './pages/admin/AdminOrganizationsPage';
+import { AdminOrganizationDetailPage } from './pages/admin/AdminOrganizationDetailPage';
+import { AdminEventsPage } from './pages/admin/AdminEventsPage';
+import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 
 function AppRoutes() {
   return (
@@ -65,6 +69,22 @@ function AppRoutes() {
         <Route
           path="/admin"
           element={<ProtectedRoute allow={['ADMIN']}><AdminHomePage /></ProtectedRoute>}
+        />
+        <Route
+          path="/admin/organizations"
+          element={<ProtectedRoute allow={['ADMIN']}><AdminOrganizationsPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/admin/organizations/:organizationId"
+          element={<ProtectedRoute allow={['ADMIN']}><AdminOrganizationDetailPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/admin/events"
+          element={<ProtectedRoute allow={['ADMIN']}><AdminEventsPage /></ProtectedRoute>}
+        />
+        <Route
+          path="/admin/users"
+          element={<ProtectedRoute allow={['ADMIN']}><AdminUsersPage /></ProtectedRoute>}
         />
       </Route>
 

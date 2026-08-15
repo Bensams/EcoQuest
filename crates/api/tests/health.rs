@@ -1,7 +1,5 @@
 //! Integration tests for `GET /api/health` using a stub probe (no database).
 
-// The shared helpers are compiled into each test binary; this one uses a subset.
-#[allow(dead_code)]
 mod support;
 
 use std::sync::Arc;

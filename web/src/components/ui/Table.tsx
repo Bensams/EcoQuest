@@ -1,10 +1,10 @@
-import type { Key, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { ColumnProps } from 'react-aria-components';
 import { Cell, Column, Row, Table as AriaTable, TableBody, TableHeader } from 'react-aria-components';
 import { cn } from '../../lib/utils';
 
 export type TableColumn<T> = {
-  key: Key;
+  key: string | number;
   header: ReactNode;
   isRowHeader?: boolean;
   className?: string;
@@ -26,14 +26,12 @@ export function DataTable<T extends { id: string | number }>({
 }: {
   columns: TableColumn<T>[];
   rows: readonly T[] | null | undefined;
-  renderCell: (row: T, columnKey: Key) => ReactNode;
-  rowKey?: (row: T) => Key;
+  renderCell: (row: T, columnKey: string | number) => ReactNode;
+  rowKey?: (row: T) => string | number;
   className?: string;
   'aria-label'?: string;
 }) {
   const body = rows ?? [];
-  const colByKey = new Map(columns.map((c) => [String(c.key), c]));
-
   return (
     <div
       className={cn(
@@ -46,38 +44,32 @@ export function DataTable<T extends { id: string | number }>({
         aria-label={ariaLabel}
         className={tableCn}
       >
-        <TableHeader>
-          {columns.map((col) => (
+        <TableHeader columns={columns}>
+          {(col) => (
             <Column
-              key={col.key}
+              id={col.key}
               isRowHeader={col.isRowHeader}
               className={cn(headCellCn)}
             >
               <span className={col.className}>{col.header}</span>
             </Column>
-          ))}
+          )}
         </TableHeader>
         <TableBody items={body}>
           {(row) => (
-            <Row key={rowKey(row)}>
-              {(node) => {
-                const column = node as unknown as { key: Key };
-                const key = column.key;
-                const col = colByKey.get(String(key));
-                return (
-                  <Cell
-                    key={String(key)}
-                    data-component="data-table-cell"
-                    className={cn(
-                      cellCn,
-                      col?.isRowHeader ? 'font-medium' : '',
-                      col?.cellClassName ? col.cellClassName(row) : '',
-                    )}
-                  >
-                    {renderCell(row, key)}
-                  </Cell>
-                );
-              }}
+            <Row id={rowKey(row)} columns={columns}>
+              {(col) => (
+                <Cell
+                  data-component="data-table-cell"
+                  className={cn(
+                    cellCn,
+                    col.isRowHeader ? 'font-medium' : '',
+                    col.cellClassName ? col.cellClassName(row) : '',
+                  )}
+                >
+                  {renderCell(row, col.key)}
+                </Cell>
+              )}
             </Row>
           )}
         </TableBody>

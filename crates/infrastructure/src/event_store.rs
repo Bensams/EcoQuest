@@ -121,7 +121,9 @@ impl EventStore for PgEventStore {
     async fn create_event(&self, c: CreateEventCommand, actor: Uuid) -> AppResult<Event> {
         let impacts = c.impacts.clone();
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let row = sqlx::query("INSERT INTO events (organization_id,created_by,name,description,activity_type,location,starts_at,ends_at,capacity,eco_points) VALUES ($1,$2,$3,$4,$5::activity_type,$6,$7,$8,$9,$10) RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count")
+        // parse_event needs organization_name, which a bare INSERT ... RETURNING
+        // cannot produce; the CTE joins organizations for it.
+        let row = sqlx::query("WITH inserted AS (INSERT INTO events (organization_id,created_by,name,description,activity_type,location,starts_at,ends_at,capacity,eco_points) VALUES ($1,$2,$3,$4,$5::activity_type,$6,$7,$8,$9,$10) RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count) SELECT i.id,i.organization_id,o.name AS organization_name,i.created_by,i.name,i.description,i.activity_type,i.location,i.starts_at,i.ends_at,i.capacity,i.eco_points,i.status,i.registered_count FROM inserted i JOIN organizations o ON o.id=i.organization_id")
             .bind(c.organization_id).bind(actor).bind(c.name).bind(c.description).bind(c.activity_type.as_str()).bind(c.location).bind(c.starts_at).bind(c.ends_at).bind(c.capacity).bind(c.eco_points).fetch_one(&mut *tx).await.map_err(db_err)?;
         let event = parse_event(&row)?;
         for impact in impacts {
@@ -135,7 +137,7 @@ impl EventStore for PgEventStore {
     async fn update_event(&self, id: Uuid, c: UpdateEventCommand) -> AppResult<Option<Event>> {
         let impacts = c.impacts;
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let row = sqlx::query("UPDATE events SET name=$2,description=$3,activity_type=$4::activity_type,location=$5,starts_at=$6,ends_at=$7,capacity=$8,eco_points=$9 WHERE id=$1 AND status='DRAFT' RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count")
+        let row = sqlx::query("WITH updated AS (UPDATE events SET name=$2,description=$3,activity_type=$4::activity_type,location=$5,starts_at=$6,ends_at=$7,capacity=$8,eco_points=$9 WHERE id=$1 AND status='DRAFT' RETURNING id,organization_id,created_by,name,description,activity_type::text AS activity_type,location,starts_at,ends_at,capacity,eco_points,status::text AS status,0::bigint AS registered_count) SELECT up.id,up.organization_id,o.name AS organization_name,up.created_by,up.name,up.description,up.activity_type,up.location,up.starts_at,up.ends_at,up.capacity,up.eco_points,up.status,up.registered_count FROM updated up JOIN organizations o ON o.id=up.organization_id")
             .bind(id).bind(c.name).bind(c.description).bind(c.activity_type.as_str()).bind(c.location).bind(c.starts_at).bind(c.ends_at).bind(c.capacity).bind(c.eco_points).fetch_optional(&mut *tx).await.map_err(db_err)?;
         let Some(row) = row else {
             return Ok(None);
@@ -278,7 +280,9 @@ impl EventStore for PgEventStore {
                 "event is full".into(),
             )));
         }
-        let inserted=sqlx::query("INSERT INTO participations (event_id,user_id) VALUES ($1,$2) RETURNING id,event_id,user_id,status::text AS status,registered_at,checked_in_at").bind(event_id).bind(user_id).fetch_one(&mut *tx).await;
+        // The row is mapped by parse_participation, which needs username; a bare
+        // INSERT ... RETURNING cannot join users, so wrap it in a CTE.
+        let inserted=sqlx::query("WITH inserted AS (INSERT INTO participations (event_id,user_id) VALUES ($1,$2) RETURNING id,event_id,user_id,status::text AS status,registered_at,checked_in_at) SELECT i.id,i.event_id,i.user_id,u.username,i.status,i.registered_at,i.checked_in_at FROM inserted i JOIN users u ON u.id=i.user_id").bind(event_id).bind(user_id).fetch_one(&mut *tx).await;
         let inserted = match inserted {
             Ok(r) => r,
             Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
@@ -298,7 +302,7 @@ impl EventStore for PgEventStore {
         qr_id: Uuid,
         now: DateTime<Utc>,
     ) -> AppResult<Option<Participation>> {
-        let r=sqlx::query("UPDATE participations p SET status='PENDING_VERIFICATION',checked_in_at=$4,qr_token_id=$3 FROM events e WHERE p.event_id=$1 AND p.user_id=$2 AND p.status='REGISTERED' AND e.id=p.event_id AND e.status='ACTIVE' AND e.starts_at <= $4 AND e.ends_at > $4 RETURNING p.id,p.event_id,p.user_id,p.status::text AS status,p.registered_at,p.checked_in_at").bind(event_id).bind(user_id).bind(qr_id).bind(now).fetch_optional(&self.pool).await.map_err(db_err)?;
+        let r=sqlx::query("WITH updated AS (UPDATE participations p SET status='PENDING_VERIFICATION',checked_in_at=$4,qr_token_id=$3 FROM events e WHERE p.event_id=$1 AND p.user_id=$2 AND p.status='REGISTERED' AND e.id=p.event_id AND e.status='ACTIVE' AND e.starts_at <= $4 AND e.ends_at > $4 RETURNING p.id,p.event_id,p.user_id,p.status::text AS status,p.registered_at,p.checked_in_at) SELECT up.id,up.event_id,up.user_id,u.username,up.status,up.registered_at,up.checked_in_at FROM updated up JOIN users u ON u.id=up.user_id").bind(event_id).bind(user_id).bind(qr_id).bind(now).fetch_optional(&self.pool).await.map_err(db_err)?;
         r.map(|r| parse_participation(&r)).transpose()
     }
     async fn list_participants(&self, event_id: Uuid) -> AppResult<Vec<Participation>> {
@@ -315,7 +319,7 @@ impl EventStore for PgEventStore {
         .collect()
     }
     async fn find_participation(&self, id: Uuid) -> AppResult<Option<Participation>> {
-        sqlx::query("SELECT id,event_id,user_id,status::text AS status,registered_at,checked_in_at FROM participations WHERE id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
+        sqlx::query("SELECT p.id,p.event_id,p.user_id,u.username,p.status::text AS status,p.registered_at,p.checked_in_at FROM participations p JOIN users u ON u.id=p.user_id WHERE p.id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
     }
     async fn list_my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>> {
         let rows = sqlx::query(&format!(

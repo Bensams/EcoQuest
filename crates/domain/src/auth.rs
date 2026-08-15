@@ -113,6 +113,8 @@ pub enum VerificationStatus {
     Rejected,
     /// Previously approved, now blocked.
     Suspended,
+    /// Soft-closed; not currently operating.
+    Inactive,
 }
 
 impl VerificationStatus {
@@ -124,6 +126,7 @@ impl VerificationStatus {
             Self::Approved => "APPROVED",
             Self::Rejected => "REJECTED",
             Self::Suspended => "SUSPENDED",
+            Self::Inactive => "INACTIVE",
         }
     }
 }
@@ -137,6 +140,7 @@ impl FromStr for VerificationStatus {
             "APPROVED" => Ok(Self::Approved),
             "REJECTED" => Ok(Self::Rejected),
             "SUSPENDED" => Ok(Self::Suspended),
+            "INACTIVE" => Ok(Self::Inactive),
             other => Err(DomainError::Validation(format!(
                 "unknown verification status: {other}"
             ))),

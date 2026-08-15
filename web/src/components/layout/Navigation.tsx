@@ -1,6 +1,7 @@
 import {
   Award,
   Bell,
+  Building2,
   CalendarClock,
   Home,
   Leaf,
@@ -15,6 +16,8 @@ import {
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
+import type { OrganizationStatus } from '../../lib/types';
+import { useFetch } from '../../lib/useFetch';
 import { cn } from '../../lib/utils';
 
 const primaryNav = [
@@ -29,7 +32,7 @@ const primaryNav = [
 ];
 
 const adminNav = [
-  { to: '/admin', label: 'Admin dashboard', icon: ShieldCheck },
+  { to: '/admin', label: 'Admin dashboard', icon: ShieldCheck, end: true },
   { to: '/admin/organizations', label: 'Organizations', icon: Users },
   { to: '/admin/events', label: 'Events', icon: CalendarClock },
   { to: '/admin/users', label: 'Users', icon: Users },
@@ -37,10 +40,18 @@ const adminNav = [
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
+  // Organization capability is ownership, not a role, so the nav is driven by
+  // the caller's memberships rather than user.role.
+  const { data: organizations } = useFetch<OrganizationStatus[]>(
+    user ? '/api/organizations/me/status' : null,
+    user?.id,
+  );
+  const organization = organizations?.[0];
 
-  const NavItem = ({ to, label, icon: Icon }: { to: string; label: string; icon: typeof Home }) => (
+  const NavItem = ({ to, label, icon: Icon, end }: { to: string; label: string; icon: typeof Home; end?: boolean }) => (
     <NavLink
       to={to}
+      end={end}
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
@@ -68,6 +79,26 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavItem key={item.to} {...item} />
         ))}
       </nav>
+
+      <div>
+        <p className="px-3 pb-2 text-xs font-medium uppercase tracking-wide text-forest-muted">Organization</p>
+        <nav aria-label="Organization" className="grid gap-1">
+          {organization ? (
+            <>
+              <NavItem to="/org" label="My organization" icon={Building2} end />
+              {organization.verification_status === 'APPROVED' && (
+                <NavItem
+                  to={`/org/${organization.organization_id}/events`}
+                  label="Manage events"
+                  icon={CalendarClock}
+                />
+              )}
+            </>
+          ) : (
+            <NavItem to="/org/create" label="Start an organization" icon={Building2} />
+          )}
+        </nav>
+      </div>
 
       {user?.role === 'ADMIN' && (
         <div>

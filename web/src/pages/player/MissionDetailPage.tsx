@@ -7,8 +7,14 @@ import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
-import { activityLabel, formatDateRange, statusToneOf } from '../../lib/format';
-import type { EcoEvent } from '../../lib/types';
+import {
+  activityLabel,
+  formatDateRange,
+  participationStatusTone,
+  statusLabel,
+  statusToneOf,
+} from '../../lib/format';
+import type { Activity, EcoEvent } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
 
 export function MissionDetailPage() {
@@ -16,6 +22,12 @@ export function MissionDetailPage() {
   const { data: event, loading, error, reload } = useFetch<EcoEvent>(`/api/events/${id}`);
   const [joining, setJoining] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  // The event payload carries no per-caller state, so the caller's own
+  // participation is read from their activity list.
+  const { data: activities, reload: reloadActivities } = useFetch<Activity[]>('/api/me/activities');
+  const participation = activities?.find(
+    (activity) => activity.event.id === id && activity.participation.status !== 'CANCELLED',
+  )?.participation;
 
   const join = async () => {
     if (!event) return;
@@ -24,9 +36,12 @@ export function MissionDetailPage() {
     try {
       await post(`/api/events/${event.id}/join`, {});
       setResult('Joined. You will be able to check in when the event is active.');
-      await reload();
+      await Promise.all([reload(), reloadActivities()]);
     } catch (err) {
       setResult(err instanceof Error ? err.message : 'Could not join this mission.');
+      // A 409 means someone already joined in another tab; resync so the
+      // button reflects reality instead of inviting a second attempt.
+      await reloadActivities();
     } finally {
       setJoining(false);
     }
@@ -76,12 +91,28 @@ export function MissionDetailPage() {
           <p className="mb-4 text-sm text-forest-muted">
             Earns <span className="font-semibold text-leaf">{event.eco_points} Eco Points</span> once verified.
           </p>
-          {event.status === 'PUBLISHED' ? (
+          {participation ? (
+            <div className="grid gap-2">
+              <Button disabled className="w-full">
+                Already joined
+              </Button>
+              <p className="flex items-center justify-center gap-2 text-sm text-forest-muted">
+                Your status:
+                <Badge tone={participationStatusTone(participation.status)}>
+                  {statusLabel(participation.status)}
+                </Badge>
+              </p>
+            </div>
+          ) : event.status !== 'PUBLISHED' ? (
+            <p className="text-center text-sm text-forest-muted">This mission is not open for sign-ups.</p>
+          ) : event.registered_count >= event.capacity ? (
+            <Button disabled className="w-full">
+              Mission full
+            </Button>
+          ) : (
             <Button onClick={() => void join()} disabled={joining} className="w-full">
               {joining ? 'Joining…' : 'Join mission'}
             </Button>
-          ) : (
-            <p className="text-center text-sm text-forest-muted">This mission is not open for sign-ups.</p>
           )}
           {result && <p className="mt-3 rounded-lg bg-sage-soft px-3 py-2 text-sm text-forest">{result}</p>}
           {event.impacts.length > 0 && (

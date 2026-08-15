@@ -84,7 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_achievements(achievements)
     .with_certificates(certificates)
     .with_admin(admin)
-    .with_organizations(organizations);
+    .with_organizations(organizations)
+    .with_web_base_url(config.web_base_url.clone());
 
     let app = router(state, &config.cors_allowed_origins);
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;

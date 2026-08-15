@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { get, post, ApiError } from './api';
+import { get, post, ApiError, setSessionLostHandler } from './api';
 import type { SessionResponse, UserProfile } from './types';
 
 type AuthState = {
@@ -33,6 +33,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh().finally(() => setLoading(false));
   }, [refresh]);
+
+  // When the refresh token is gone too, drop the cached profile so the shell
+  // stops showing a signed-in user while every request is being rejected.
+  useEffect(() => {
+    setSessionLostHandler(() => setUser(null));
+    return () => setSessionLostHandler(null);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const session = await post<SessionResponse>('/api/auth/login', { email, password });

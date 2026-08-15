@@ -97,7 +97,7 @@ Decisions:
 - **Passwords**: Argon2id, 19 MiB / 2 iterations / 1 lane (OWASP baseline). Only
   the PHC string is stored. Unknown emails still pay a hash so login timing does
   not leak account existence.
-- **Access token**: HS256 JWT, 15 min default, delivered in the HttpOnly
+- **Access token**: HS256 JWT, 8 hour default (`ACCESS_TOKEN_TTL_SECS`), delivered in the HttpOnly
   `eq_access` cookie (`SameSite=Strict`, `Secure` unless `COOKIES_SECURE=false`).
   Never in `localStorage`; a `Bearer` header is accepted only as a fallback for
   non-browser clients such as the CLI.
@@ -107,6 +107,14 @@ Decisions:
 - **Authorization**: `AuthUser`, `AdminUser` and `OrganizationUser` extractors.
   `Role::satisfies` grants `ADMIN` every permission; other roles must match.
   `ADMIN` is never self-assignable at registration.
+- **Organizer authorization**: organization capability is ownership, not a role,
+  so the same account gains it once its organization is approved — no second
+  login. `EventService` has two guards. `require_owner` covers reads and
+  cancellation, which a suspended organization keeps so it can see its data and
+  wind events down. `require_approved_owner` covers everything that advances an
+  event or mints value — create, edit, publish, activate, issue a check-in code,
+  and verify or reject participation — so a pending, rejected, or suspended
+  organization cannot award points or certificates.
 - **Rate limiting**: fixed window per client IP on all auth endpoints
   (`AUTH_RATE_LIMIT_MAX` per `AUTH_RATE_LIMIT_WINDOW_SECS`), in-process for now.
 - **Audit**: `user.registered`, `user.login`, `user.login_failed`,
@@ -168,8 +176,45 @@ single verifier serves both.
 This proves key ownership only. `MockBlockchainAdapter` still stands in for minting and
 nothing is broadcast to any network.
 
+## Administration
+
+`AdminService` sits behind the `AdminUser` extractor, so every route under `/api/admin`
+requires the `ADMIN` role. Migration `20260815010000_admin_moderation.sql` adds soft state
+only: no administrator action deletes a row.
+
+- **Reasons**: every mutation requires a non-empty reason. The reason is persisted on the
+  target (`organizations.review_reason`, `events.moderation_reason`, `users.status_reason`,
+  `participations.flag_reason`) and copied into the audit entry.
+- **Audit**: the action names the outcome, not the endpoint —
+  `organization.approved` / `.rejected` / `.suspended` / `.reopened` / `.inactivated`,
+  `user.role_changed`, `user.suspended` / `.deactivated` / `.reactivated`,
+  `user.points_corrected`, `user.password_reset_issued`,
+  `event.cancelled` / `.suspended` / `.restored` / `.archived`,
+  `participation.flagged` / `.unflagged`. Each records the acting administrator, the
+  reason, and the previous value. As elsewhere, an audit write failure is logged and
+  never fails the request.
+- **Self-protection**: an administrator cannot change their own role or account status.
+  A role change revokes the target's refresh-token family, so they cannot start a new
+  session. Their existing access token stays valid until it expires, because a JWT
+  carries its own claims and is never checked against the database — so a demotion or
+  suspension is fully effective only after `ACCESS_TOKEN_TTL_SECS` (8 hours by default).
+  Shorten that variable if immediate revocation matters more than long sessions.
+- **Event moderation**: cancel, suspend, restore, archive. Each transition is guarded —
+  only a published or active event can be suspended, only a suspended one restored.
+  `events.previous_status` remembers the state a suspension interrupted so a restore
+  returns to it rather than guessing. Moving to cancelled, suspended, or archived revokes
+  the event's QR tokens, so a moderated event stops accepting check-ins immediately.
+- **Points**: corrections are ledger entries in `point_transactions`, never direct writes
+  to the `users.eco_points` cache, and are rejected if they would drive a balance below
+  zero.
+- **Listing**: `sort` is mapped through a per-resource allowlist to a `&'static str`
+  ORDER BY fragment, so no caller string reaches SQL. `per_page` is clamped to 100.
+- **User-facing links**: built from `WEB_BASE_URL`, falling back to the first
+  `CORS_ALLOWED_ORIGINS` entry. It must be set to the deployed client origin in production.
+
 ## Not built
 
 No blockchain program exists and no target network is chosen. Certificates render as JSON,
-not PDF. Revocation columns exist in the schema without an endpoint. The web client has no
-organizer console and does not yet call the certificate routes.
+not PDF. Revocation columns exist in the schema without an endpoint. Password-reset tokens
+are minted and stored but cannot be redeemed: there is no redemption endpoint and no
+`/reset-password` route in the web client.

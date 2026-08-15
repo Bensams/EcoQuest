@@ -4,12 +4,13 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/Table';
-import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
+import { EmptyState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { patch } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import type { AdminUser, Page, Role, UserStatus } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
+import { useNotice } from '../../lib/useNotice';
 
 const roleTone: Record<AdminUser['role'], 'muted' | 'success'> = {
   USER: 'muted',
@@ -26,38 +27,38 @@ export function AdminUsersPage() {
   const { user } = useAuth();
   const { data, error, loading, reload } = useFetch<Page<AdminUser>>('/api/admin/users');
   const users = data?.items ?? [];
-  const [notice, setNotice] = useState<string | null>(null);
+  const { notice, clear, succeed, fail } = useNotice();
   const [busy, setBusy] = useState<string | null>(null);
 
   const setRole = async (target: AdminUser, role: Role) => {
-    setNotice(null);
+    clear();
     setBusy(target.id);
     try {
       await patch(`/api/admin/users/${target.id}/role`, {
         role,
         reason: `Role changed to ${role} from the admin dashboard.`,
       });
-      setNotice(`“${target.username}” is now ${role === 'ADMIN' ? 'an admin' : 'a user'}.`);
+      succeed(`“${target.username}” is now ${role === 'ADMIN' ? 'an admin' : 'a user'}.`);
       await reload();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not change role.');
+      fail(err, 'Could not change role.');
     } finally {
       setBusy(null);
     }
   };
 
   const setStatus = async (target: AdminUser, status: UserStatus) => {
-    setNotice(null);
+    clear();
     setBusy(target.id);
     try {
       await patch(`/api/admin/users/${target.id}/status`, {
         status,
         reason: `Status changed to ${status} from the admin dashboard.`,
       });
-      setNotice(`“${target.username}” status is now ${status.toLowerCase()}.`);
+      succeed(`“${target.username}” status is now ${status.toLowerCase()}.`);
       await reload();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not change status.');
+      fail(err, 'Could not change status.');
     } finally {
       setBusy(null);
     }
@@ -70,7 +71,7 @@ export function AdminUsersPage() {
         title="Users"
         detail="Adjust roles and lifecycle status across the platform."
       />
-      {notice && <div className="mb-4"><ErrorNote message={notice} /></div>}
+      {notice && <div className="mb-4"><Notice tone={notice.tone} message={notice.message} /></div>}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading && <p className="mb-4 text-sm text-forest-muted">Loading users…</p>}
 

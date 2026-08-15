@@ -89,14 +89,21 @@ impl CertificateService {
             })
     }
     /// Public verification. `hash_hex` must be 64 lowercase hex characters.
+    ///
+    /// Unlike the authenticated lookups, the messages here are read by a member
+    /// of the public checking someone's certificate, so they are full sentences
+    /// rather than the bare entity name the internal convention uses.
     pub async fn verify_public(&self, hash_hex: &str) -> crate::AppResult<Certificate> {
         let bytes = decode_hash(hash_hex).ok_or_else(|| {
             crate::AppError::Domain(ecoquest_domain::DomainError::Validation(
-                "verification hash must be 64 hexadecimal characters".into(),
+                "That is not a valid verification code. A genuine code is 64 hexadecimal characters."
+                    .into(),
             ))
         })?;
         self.store.find_by_hash(&bytes).await?.ok_or_else(|| {
-            crate::AppError::Domain(ecoquest_domain::DomainError::NotFound("certificate".into()))
+            crate::AppError::Domain(ecoquest_domain::DomainError::NotFound(
+                "No certificate matches this verification code.".into(),
+            ))
         })
     }
     pub async fn organization_status(

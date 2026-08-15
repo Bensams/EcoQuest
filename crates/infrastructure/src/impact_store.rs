@@ -1,11 +1,32 @@
 //! PostgreSQL read model for verified environmental impact.
 use crate::PgStore;
 use ecoquest_application::{
-    impact::{CommunityGoal, ImpactStats, ImpactStore, MetricTotal},
+    impact::{CommunityGoal, ImpactMetric, ImpactStats, ImpactStore, MetricTotal},
     AppError, AppResult,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
+
+/// Shared by the impact read model and the event service's impact validation,
+/// so both read one definition of the vocabulary.
+pub(crate) async fn load_impact_metrics(pool: &PgPool) -> AppResult<Vec<ImpactMetric>> {
+    sqlx::query(
+        "SELECT metric,label,unit,max_per_participant FROM impact_metrics ORDER BY sort_order,metric",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)?
+    .iter()
+    .map(|r| {
+        Ok(ImpactMetric {
+            metric: r.try_get("metric").map_err(db_err)?,
+            label: r.try_get("label").map_err(db_err)?,
+            unit: r.try_get("unit").map_err(db_err)?,
+            max_per_participant: r.try_get("max_per_participant").map_err(db_err)?,
+        })
+    })
+    .collect()
+}
 
 #[derive(Clone, Debug)]
 pub struct PgImpactStore {
@@ -107,5 +128,8 @@ impl ImpactStore for PgImpactStore {
             target_value: row.try_get("target_value").map_err(db_err)?,
             current_value: row.try_get("current_value").map_err(db_err)?,
         })
+    }
+    async fn list_metrics(&self) -> AppResult<Vec<ImpactMetric>> {
+        load_impact_metrics(&self.pool).await
     }
 }

@@ -93,6 +93,11 @@ fn parse_activity_participation(row: &sqlx::postgres::PgRow) -> AppResult<Partic
 
 #[async_trait::async_trait]
 impl EventStore for PgEventStore {
+    async fn list_impact_metrics(
+        &self,
+    ) -> AppResult<Vec<ecoquest_application::impact::ImpactMetric>> {
+        crate::impact_store::load_impact_metrics(&self.pool).await
+    }
     async fn is_organization_owner(&self, org: Uuid, user: Uuid) -> AppResult<bool> {
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organizations WHERE id=$1 AND owner_id=$2)")
             .bind(org)
@@ -171,7 +176,10 @@ impl EventStore for PgEventStore {
         Ok(Some(event))
     }
     async fn list_published_events(&self, now: DateTime<Utc>) -> AppResult<Vec<Event>> {
-        let rows = sqlx::query(&format!("SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.status='PUBLISHED' AND e.ends_at>$1 ORDER BY e.starts_at")).bind(now).fetch_all(&self.pool).await.map_err(db_err)?;
+        // ACTIVE is included so a mission that is already under way stays
+        // discoverable; it is the only window in which check-in works, and a
+        // player who finds it there can still join and scan.
+        let rows = sqlx::query(&format!("SELECT {EVENT_COLUMNS} FROM events e JOIN organizations o ON o.id=e.organization_id WHERE e.status IN ('PUBLISHED','ACTIVE') AND e.ends_at>$1 ORDER BY e.starts_at")).bind(now).fetch_all(&self.pool).await.map_err(db_err)?;
         let mut events = rows
             .iter()
             .map(parse_event)
@@ -262,7 +270,9 @@ impl EventStore for PgEventStore {
         let row=sqlx::query("SELECT status::text AS status,starts_at,ends_at,capacity FROM events WHERE id=$1 FOR UPDATE").bind(event_id).fetch_optional(&mut *tx).await.map_err(db_err)?.ok_or_else(||AppError::Domain(DomainError::NotFound("event".into())))?;
         let status: String = row.try_get("status").map_err(db_err)?;
         let ends: DateTime<Utc> = row.try_get("ends_at").map_err(db_err)?;
-        if status != "PUBLISHED" || ends <= now {
+        // ACTIVE counts as open: registration closes when the mission ends, not
+        // when it starts, so a walk-up volunteer can join on site and check in.
+        if !matches!(status.as_str(), "PUBLISHED" | "ACTIVE") || ends <= now {
             return Err(AppError::Domain(DomainError::Conflict(
                 "event is not open for registration".into(),
             )));
@@ -333,6 +343,13 @@ impl EventStore for PgEventStore {
         .iter()
         .map(parse_participation)
         .collect()
+    }
+    async fn find_participation_for_user(
+        &self,
+        event_id: Uuid,
+        user_id: Uuid,
+    ) -> AppResult<Option<Participation>> {
+        sqlx::query("SELECT p.id,p.event_id,p.user_id,u.username,p.status::text AS status,p.registered_at,p.checked_in_at FROM participations p JOIN users u ON u.id=p.user_id WHERE p.event_id=$1 AND p.user_id=$2").bind(event_id).bind(user_id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()
     }
     async fn find_participation(&self, id: Uuid) -> AppResult<Option<Participation>> {
         sqlx::query("SELECT p.id,p.event_id,p.user_id,u.username,p.status::text AS status,p.registered_at,p.checked_in_at FROM participations p JOIN users u ON u.id=p.user_id WHERE p.id=$1").bind(id).fetch_optional(&self.pool).await.map_err(db_err)?.map(|row| parse_participation(&row)).transpose()

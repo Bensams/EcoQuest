@@ -1,5 +1,5 @@
-import { AlertCircle, Loader2, SearchX } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { AlertCircle, CheckCircle2, Info, Loader2, SearchX } from 'lucide-react';
+import type { ComponentType, ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 import { Button } from './Button';
 
@@ -29,17 +29,40 @@ export function EmptyState({
   );
 }
 
-export function ErrorNote({ message }: { message: string }) {
+export type NoticeTone = 'success' | 'error' | 'info';
+
+const noticeStyles: Record<NoticeTone, { className: string; Icon: ComponentType<{ className?: string }> }> = {
+  success: { className: 'border-green-200 bg-green-50 text-green-800', Icon: CheckCircle2 },
+  error: { className: 'border-red-200 bg-red-50 text-red-700', Icon: AlertCircle },
+  info: { className: 'border-sage bg-sage-soft text-forest', Icon: Info },
+};
+
+/**
+ * Inline result banner. Actions that can succeed *or* fail must pass the tone
+ * that matches the outcome — a green confirmation reads as a failure when it is
+ * rendered in the error palette.
+ *
+ * `role` follows the tone: only errors interrupt a screen reader; successes are
+ * announced politely.
+ */
+export function Notice({ tone = 'error', message }: { tone?: NoticeTone; message: string }) {
+  const { className, Icon } = noticeStyles[tone];
   return (
     <div
-      data-component="error-note"
-      className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-      role="alert"
+      data-component="notice"
+      data-tone={tone}
+      className={cn('flex items-start gap-2 rounded-lg border px-3 py-2 text-sm', className)}
+      role={tone === 'error' ? 'alert' : 'status'}
     >
-      <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>
   );
+}
+
+/** [`Notice`] fixed to the error tone, for call sites that only ever fail. */
+export function ErrorNote({ message }: { message: string }) {
+  return <Notice tone="error" message={message} />;
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {

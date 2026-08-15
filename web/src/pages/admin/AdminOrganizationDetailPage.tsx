@@ -6,7 +6,7 @@ import { ReasonDialog } from '../../components/admin/ReasonDialog';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, StatTile } from '../../components/ui/Card';
-import { EmptyState, ErrorNote, LoadingState } from '../../components/ui/EmptyState';
+import { EmptyState, LoadingState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { DataTable } from '../../components/ui/Table';
 import { Tabs } from '../../components/ui/Tabs';
@@ -14,6 +14,7 @@ import { patch } from '../../lib/api';
 import { eventStatusTone, formatDateTime, statusLabel, verificationToneOf } from '../../lib/format';
 import type { AdminOrganizationDetail, VerificationStatus } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
+import { useNotice } from '../../lib/useNotice';
 
 type TabKey = 'profile' | 'events' | 'members' | 'certificates' | 'impact' | 'audit';
 
@@ -24,7 +25,7 @@ export function AdminOrganizationDetailPage() {
     organizationId,
   );
   const [tab, setTab] = useState<TabKey>('profile');
-  const [notice, setNotice] = useState<string | null>(null);
+  const { notice, clear, succeed, fail } = useNotice();
   const [nextStatus, setNextStatus] = useState<VerificationStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -38,14 +39,14 @@ export function AdminOrganizationDetailPage() {
   const review = async (reason: string) => {
     if (!nextStatus) return;
     setBusy(true);
-    setNotice(null);
+    clear();
     try {
       await patch(`/api/admin/organizations/${org.id}/status`, { status: nextStatus, reason });
-      setNotice(`Status is now ${statusLabel(nextStatus).toLowerCase()}.`);
+      succeed(`Status is now ${statusLabel(nextStatus).toLowerCase()}.`);
       setNextStatus(null);
       await reload();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Review failed.');
+      fail(err, 'Review failed.');
     } finally {
       setBusy(false);
     }
@@ -67,7 +68,7 @@ export function AdminOrganizationDetailPage() {
         <Badge tone={verificationToneOf(org.verification_status)}>{statusLabel(org.verification_status)}</Badge>
         <span className="text-xs text-forest-muted">{org.organization_type} · {org.location}</span>
       </div>
-      {notice && <div className="mb-4"><ErrorNote message={notice} /></div>}
+      {notice && <div className="mb-4"><Notice tone={notice.tone} message={notice.message} /></div>}
       <div className="mb-4 flex flex-wrap gap-2">
         {org.verification_status === 'PENDING' && (
           <>

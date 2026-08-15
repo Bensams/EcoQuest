@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use ecoquest_domain::{DomainError, EventStatus, VerificationStatus};
+use ecoquest_domain::{DomainError, EventStatus, ParticipationStatus, VerificationStatus};
 use uuid::Uuid;
 
 use super::{
@@ -65,8 +65,58 @@ impl EventService {
         }
     }
 
+    /// Checks declared impacts against the metric catalogue.
+    ///
+    /// Impact aggregates group by `(metric, unit)` and the community goal
+    /// matches on both, so an unrecognised metric or a stray unit would silently
+    /// strand a mission's contribution instead of failing visibly. The ceiling
+    /// stops one organizer's typo from dominating the platform-wide total.
+    async fn validate_impacts(&self, impacts: &[super::models::EventImpact]) -> AppResult<()> {
+        if impacts.is_empty() {
+            return Ok(());
+        }
+        let catalog = self.store.list_impact_metrics().await?;
+        let invalid = |message: String| AppError::Domain(DomainError::Validation(message));
+        let mut seen = std::collections::HashSet::new();
+        for impact in impacts {
+            let Some(known) = catalog.iter().find(|m| m.metric == impact.metric) else {
+                let names: Vec<&str> = catalog.iter().map(|m| m.metric.as_str()).collect();
+                return Err(invalid(format!(
+                    "unknown impact metric '{}'; choose one of: {}",
+                    impact.metric,
+                    names.join(", ")
+                )));
+            };
+            if !seen.insert(impact.metric.as_str()) {
+                return Err(invalid(format!(
+                    "impact metric '{}' is listed more than once",
+                    impact.metric
+                )));
+            }
+            if impact.unit != known.unit {
+                return Err(invalid(format!(
+                    "'{}' is recorded in {}, not '{}'",
+                    impact.metric, known.unit, impact.unit
+                )));
+            }
+            // NaN fails the database CHECK as an opaque constraint violation;
+            // reject it here so the caller learns what was wrong.
+            if !impact.expected_value.is_finite() || impact.expected_value < 0.0 {
+                return Err(invalid(format!("'{}' must be zero or more", impact.metric)));
+            }
+            if impact.expected_value > known.max_per_participant {
+                return Err(invalid(format!(
+                    "'{}' is capped at {} {} per volunteer; {} was given",
+                    impact.metric, known.max_per_participant, known.unit, impact.expected_value
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub async fn create(&self, command: CreateEventCommand, actor_id: Uuid) -> AppResult<Event> {
         validate_create(&command)?;
+        self.validate_impacts(&command.impacts).await?;
         self.require_approved_owner(command.organization_id, actor_id)
             .await?;
         self.store.create_event(command, actor_id).await
@@ -79,6 +129,7 @@ impl EventService {
         actor_id: Uuid,
     ) -> AppResult<Event> {
         validate_update(&command)?;
+        self.validate_impacts(&command.impacts).await?;
         let event = self
             .event_for_approved_organizer(event_id, actor_id)
             .await?;
@@ -192,6 +243,17 @@ impl EventService {
                 "QR expiry must be after activation".into(),
             )));
         }
+        // Check-in only succeeds inside the mission window, so a code whose
+        // validity never overlaps that window can never be scanned. Refusing it
+        // here beats handing the organizer a code that silently fails on site.
+        if expires_at <= event.starts_at || activates_at >= event.ends_at {
+            return Err(AppError::Domain(DomainError::Validation(format!(
+                "a check-in code is only usable while the mission runs ({} to {}); \
+                 choose a validity window that overlaps it",
+                event.starts_at.to_rfc3339(),
+                event.ends_at.to_rfc3339()
+            ))));
+        }
         self.store.revoke_event_qr_tokens(event_id).await?;
         let code = generate_check_in_code();
         let token = self
@@ -245,14 +307,79 @@ impl EventService {
                 "check-in code is expired or inactive".into(),
             )));
         }
-        self.store
+        if let Some(participation) = self
+            .store
             .check_in(token.event_id, user_id, token.id, now)
             .await?
-            .ok_or_else(|| {
-                AppError::Domain(DomainError::Conflict(
-                    "participation is not eligible for check-in".into(),
-                ))
-            })
+        {
+            return Ok(participation);
+        }
+        // The conditional UPDATE reports only that nothing matched. Work out
+        // which precondition failed so the scanner sees an actionable reason
+        // instead of one catch-all conflict.
+        Err(self
+            .explain_failed_check_in(token.event_id, user_id, now)
+            .await)
+    }
+
+    /// Builds the error for a check-in the database refused. Any lookup failure
+    /// here degrades to the generic conflict rather than masking the refusal.
+    async fn explain_failed_check_in(
+        &self,
+        event_id: Uuid,
+        user_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> AppError {
+        let generic = || {
+            AppError::Domain(DomainError::Conflict(
+                "participation is not eligible for check-in".into(),
+            ))
+        };
+        let Ok(Some(event)) = self.store.find_event(event_id).await else {
+            return generic();
+        };
+        let conflict = |message: String| AppError::Domain(DomainError::Conflict(message));
+        if event.status != EventStatus::Active {
+            return conflict(format!(
+                "this mission is not open for check-in yet; the organizer has not started it (status {})",
+                event.status.as_str()
+            ));
+        }
+        if now < event.starts_at {
+            return conflict(format!(
+                "check-in opens when the mission starts at {}",
+                event.starts_at.to_rfc3339()
+            ));
+        }
+        if now >= event.ends_at {
+            return conflict(format!(
+                "this mission ended at {}; check-in is closed",
+                event.ends_at.to_rfc3339()
+            ));
+        }
+        let Ok(participation) = self
+            .store
+            .find_participation_for_user(event_id, user_id)
+            .await
+        else {
+            return generic();
+        };
+        match participation.map(|p| p.status) {
+            None => conflict("join this mission before checking in".into()),
+            Some(ParticipationStatus::PendingVerification) => {
+                conflict("you have already checked in; the organizer will verify you".into())
+            }
+            Some(ParticipationStatus::Verified) => {
+                conflict("your participation in this mission is already verified".into())
+            }
+            Some(ParticipationStatus::Rejected) => {
+                conflict("your participation in this mission was rejected".into())
+            }
+            Some(ParticipationStatus::Cancelled) => {
+                conflict("your registration for this mission was cancelled".into())
+            }
+            Some(ParticipationStatus::Registered) => generic(),
+        }
     }
 
     pub async fn participants(
@@ -389,19 +516,47 @@ fn validate_update(command: &UpdateEventCommand) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::events::models::VerificationResult;
-    use ecoquest_domain::{ActivityType, ParticipationStatus};
+    use ecoquest_domain::ActivityType;
 
     const ORG: Uuid = Uuid::from_u128(1);
     const EVENT: Uuid = Uuid::from_u128(2);
     const ACTOR: Uuid = Uuid::from_u128(3);
     const PARTICIPATION: Uuid = Uuid::from_u128(4);
 
-    /// Minimal [`EventStore`] answering only the ownership and verification
-    /// lookups the guards make. Anything past a guard is unreachable in these
-    /// tests and stays unimplemented on purpose: if a guard ever stops firing,
-    /// the test panics instead of silently passing.
+    /// Minimal [`EventStore`] answering only the ownership, event and
+    /// participation lookups the guards and the check-in diagnosis make.
+    /// Anything past a guard is unreachable in these tests and stays
+    /// unimplemented on purpose: if a guard ever stops firing, the test panics
+    /// instead of silently passing.
+    ///
+    /// `check_in` always reports "nothing matched", which is what drives
+    /// [`EventService::explain_failed_check_in`].
     struct GuardStore {
         status: VerificationStatus,
+        event: Event,
+        participation: Option<Participation>,
+    }
+
+    impl GuardStore {
+        fn new(status: VerificationStatus) -> Self {
+            Self {
+                status,
+                event: sample_event(),
+                participation: Some(sample_participation(ParticipationStatus::Registered)),
+            }
+        }
+    }
+
+    fn sample_participation(status: ParticipationStatus) -> Participation {
+        Participation {
+            id: PARTICIPATION,
+            event_id: EVENT,
+            user_id: ACTOR,
+            username: Some("player".into()),
+            status,
+            registered_at: Utc::now(),
+            checked_in_at: None,
+        }
     }
 
     fn sample_event() -> Event {
@@ -414,7 +569,9 @@ mod tests {
             description: "d".into(),
             activity_type: ActivityType::BeachCleanup,
             location: "x".into(),
-            starts_at: Utc::now(),
+            // Already under way, so check-in's window checks pass by default and
+            // each test only has to set up the one condition it is about.
+            starts_at: Utc::now() - chrono::Duration::hours(1),
             ends_at: Utc::now() + chrono::Duration::hours(2),
             capacity: 10,
             eco_points: 100,
@@ -426,6 +583,14 @@ mod tests {
 
     #[async_trait::async_trait]
     impl EventStore for GuardStore {
+        async fn list_impact_metrics(&self) -> AppResult<Vec<crate::impact::ImpactMetric>> {
+            Ok(vec![crate::impact::ImpactMetric {
+                metric: "waste_collected".into(),
+                label: "Waste collected".into(),
+                unit: "kg".into(),
+                max_per_participant: 500.0,
+            }])
+        }
         async fn is_organization_owner(&self, _: Uuid, _: Uuid) -> AppResult<bool> {
             Ok(true)
         }
@@ -436,7 +601,7 @@ mod tests {
             Ok(Some(self.status))
         }
         async fn find_event(&self, _: Uuid) -> AppResult<Option<Event>> {
-            Ok(Some(sample_event()))
+            Ok(Some(self.event.clone()))
         }
         async fn find_participation(&self, id: Uuid) -> AppResult<Option<Participation>> {
             Ok(Some(Participation {
@@ -464,18 +629,27 @@ mod tests {
         async fn transition_event(&self, _: Uuid, _: &str, _: &str) -> AppResult<bool> {
             unimplemented!("guard should have rejected")
         }
+        // The two QR writes succeed so a *passing* validation is observable as
+        // an Ok. The guard tests below still assert on the error, so a guard
+        // that stops firing fails them just as loudly as a panic would.
         async fn revoke_event_qr_tokens(&self, _: Uuid) -> AppResult<()> {
-            unimplemented!("guard should have rejected")
+            Ok(())
         }
         async fn insert_event_qr_token(
             &self,
-            _: Uuid,
+            event_id: Uuid,
             _: &[u8],
             _: Uuid,
-            _: DateTime<Utc>,
-            _: DateTime<Utc>,
+            activates_at: DateTime<Utc>,
+            expires_at: DateTime<Utc>,
         ) -> AppResult<EventQrToken> {
-            unimplemented!("guard should have rejected")
+            Ok(EventQrToken {
+                id: Uuid::from_u128(5),
+                event_id,
+                activates_at,
+                expires_at,
+                revoked_at: None,
+            })
         }
         async fn find_event_qr_token(&self, _: &[u8]) -> AppResult<Option<EventQrToken>> {
             unimplemented!()
@@ -490,10 +664,17 @@ mod tests {
             _: Uuid,
             _: DateTime<Utc>,
         ) -> AppResult<Option<Participation>> {
-            unimplemented!()
+            Ok(None)
         }
         async fn list_participants(&self, _: Uuid) -> AppResult<Vec<Participation>> {
             unimplemented!()
+        }
+        async fn find_participation_for_user(
+            &self,
+            _: Uuid,
+            _: Uuid,
+        ) -> AppResult<Option<Participation>> {
+            Ok(self.participation.clone())
         }
         async fn list_my_activities(&self, _: Uuid) -> AppResult<Vec<Activity>> {
             unimplemented!()
@@ -517,7 +698,11 @@ mod tests {
     }
 
     fn service(status: VerificationStatus) -> EventService {
-        EventService::new(Arc::new(GuardStore { status }))
+        EventService::new(Arc::new(GuardStore::new(status)))
+    }
+
+    fn service_with(store: GuardStore) -> EventService {
+        EventService::new(Arc::new(store))
     }
 
     #[track_caller]
@@ -554,6 +739,191 @@ mod tests {
             .await
             .expect_err("suspended organization must not adjudicate");
         assert_not_approved(&err, "reject_participation");
+    }
+
+    /// The organizer used to be able to mint a code valid "now" for a mission
+    /// scheduled for tomorrow. Every scan then failed, because check-in is only
+    /// possible inside the mission window.
+    #[tokio::test]
+    async fn qr_window_must_overlap_the_mission_window() {
+        let mut store = GuardStore::new(VerificationStatus::Approved);
+        store.event.starts_at = Utc::now() + chrono::Duration::hours(20);
+        store.event.ends_at = Utc::now() + chrono::Duration::hours(24);
+        let now = Utc::now();
+        let err = service_with(store)
+            .rotate_qr(EVENT, ACTOR, now, now + chrono::Duration::hours(2))
+            .await
+            .expect_err("a code that expires before the mission starts is unusable");
+        match err {
+            AppError::Domain(DomainError::Validation(m)) => {
+                assert!(m.contains("only usable while the mission runs"), "got {m}");
+            }
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn qr_window_overlapping_the_mission_passes_validation() {
+        let mut store = GuardStore::new(VerificationStatus::Approved);
+        store.event.starts_at = Utc::now() + chrono::Duration::hours(1);
+        store.event.ends_at = Utc::now() + chrono::Duration::hours(5);
+        let now = Utc::now();
+        service_with(store)
+            .rotate_qr(EVENT, ACTOR, now, now + chrono::Duration::hours(3))
+            .await
+            .expect("a window overlapping the mission is valid");
+    }
+
+    #[track_caller]
+    fn assert_conflict_contains(err: &AppError, needle: &str) {
+        match err {
+            AppError::Domain(DomainError::Conflict(m)) => {
+                assert!(m.contains(needle), "expected {needle:?} in {m:?}");
+            }
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+    }
+
+    /// A refused check-in must say *why*. These all used to collapse into
+    /// "participation is not eligible for check-in".
+    #[tokio::test]
+    async fn refused_check_in_explains_the_reason() {
+        let now = Utc::now();
+
+        let mut before_start = GuardStore::new(VerificationStatus::Approved);
+        before_start.event.starts_at = now + chrono::Duration::hours(3);
+        before_start.event.ends_at = now + chrono::Duration::hours(6);
+        assert_conflict_contains(
+            &service_with(before_start)
+                .explain_failed_check_in(EVENT, ACTOR, now)
+                .await,
+            "check-in opens when the mission starts",
+        );
+
+        let mut ended = GuardStore::new(VerificationStatus::Approved);
+        ended.event.starts_at = now - chrono::Duration::hours(6);
+        ended.event.ends_at = now - chrono::Duration::hours(3);
+        assert_conflict_contains(
+            &service_with(ended)
+                .explain_failed_check_in(EVENT, ACTOR, now)
+                .await,
+            "check-in is closed",
+        );
+
+        let mut not_started = GuardStore::new(VerificationStatus::Approved);
+        not_started.event.status = EventStatus::Published;
+        assert_conflict_contains(
+            &service_with(not_started)
+                .explain_failed_check_in(EVENT, ACTOR, now)
+                .await,
+            "the organizer has not started it",
+        );
+
+        let mut never_joined = GuardStore::new(VerificationStatus::Approved);
+        never_joined.participation = None;
+        assert_conflict_contains(
+            &service_with(never_joined)
+                .explain_failed_check_in(EVENT, ACTOR, now)
+                .await,
+            "join this mission before checking in",
+        );
+
+        let mut already = GuardStore::new(VerificationStatus::Approved);
+        already.participation = Some(sample_participation(
+            ParticipationStatus::PendingVerification,
+        ));
+        assert_conflict_contains(
+            &service_with(already)
+                .explain_failed_check_in(EVENT, ACTOR, now)
+                .await,
+            "already checked in",
+        );
+
+        let mut verified = GuardStore::new(VerificationStatus::Approved);
+        verified.participation = Some(sample_participation(ParticipationStatus::Verified));
+        assert_conflict_contains(
+            &service_with(verified)
+                .explain_failed_check_in(EVENT, ACTOR, now)
+                .await,
+            "already verified",
+        );
+    }
+
+    #[track_caller]
+    fn assert_validation_contains(err: &AppError, needle: &str) {
+        match err {
+            AppError::Domain(DomainError::Validation(m)) => {
+                assert!(m.contains(needle), "expected {needle:?} in {m:?}");
+            }
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    fn impact(metric: &str, unit: &str, value: f64) -> super::super::models::EventImpact {
+        super::super::models::EventImpact {
+            metric: metric.into(),
+            unit: unit.into(),
+            expected_value: value,
+        }
+    }
+
+    /// Free-text metrics silently split impact totals and slip past the
+    /// community goal, which matches on metric *and* unit.
+    #[tokio::test]
+    async fn declared_impacts_must_match_the_catalogue() {
+        let service = service(VerificationStatus::Approved);
+
+        assert_validation_contains(
+            &service
+                .validate_impacts(&[impact("waste_colected", "kg", 4.0)])
+                .await
+                .expect_err("a metric outside the catalogue must be refused"),
+            "unknown impact metric",
+        );
+
+        assert_validation_contains(
+            &service
+                .validate_impacts(&[impact("waste_collected", "kgs", 4.0)])
+                .await
+                .expect_err("a stray unit must be refused, not silently stranded"),
+            "recorded in kg",
+        );
+
+        assert_validation_contains(
+            &service
+                .validate_impacts(&[impact("waste_collected", "kg", 900.0)])
+                .await
+                .expect_err("an organizer must not declare unbounded impact"),
+            "capped at",
+        );
+
+        assert_validation_contains(
+            &service
+                .validate_impacts(&[impact("waste_collected", "kg", f64::NAN)])
+                .await
+                .expect_err("NaN would fail the database CHECK opaquely"),
+            "zero or more",
+        );
+
+        assert_validation_contains(
+            &service
+                .validate_impacts(&[
+                    impact("waste_collected", "kg", 4.0),
+                    impact("waste_collected", "kg", 5.0),
+                ])
+                .await
+                .expect_err("a duplicate metric would violate the unique index"),
+            "more than once",
+        );
+
+        service
+            .validate_impacts(&[impact("waste_collected", "kg", 4.0)])
+            .await
+            .expect("a catalogued metric at a sane value is valid");
+        service
+            .validate_impacts(&[])
+            .await
+            .expect("declaring no impact stays allowed");
     }
 
     #[tokio::test]

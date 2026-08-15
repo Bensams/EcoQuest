@@ -3,7 +3,7 @@ import { QrCode } from 'lucide-react';
 import { LiveQrScanner } from '../../components/qr/LiveQrScanner';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
+import { EmptyState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Field, TextInput } from '../../components/ui/Field';
 import { post } from '../../lib/api';
@@ -76,8 +76,8 @@ export function CheckInPage() {
             <Field label="Check-in code">
               <TextInput value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" placeholder="e.g. XK4T-9MPQ" />
             </Field>
-            {error && <ErrorNote message={error} />}
-            {result && <p className="rounded-lg bg-sage-soft px-3 py-2 text-sm text-forest">{result}</p>}
+            {error && <Notice tone="error" message={error} />}
+            {result && <Notice tone="success" message={result} />}
             <Button type="submit" disabled={pending}>
               {pending ? 'Checking in…' : 'Check in'}
             </Button>

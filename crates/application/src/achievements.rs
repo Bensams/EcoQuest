@@ -15,11 +15,29 @@ use crate::{AppError, AppResult};
 pub const OCEAN_GUARDIAN: &str = "OCEAN_GUARDIAN";
 pub const MAX_MINT_ATTEMPTS: i32 = 5;
 
+/// Where an achievement lives. Platform achievements are derived from the
+/// `achievement_progress` counters; on-chain ones are minted asynchronously.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum AchievementKind {
+    Platform,
+    Onchain,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Achievement {
     pub achievement_key: String,
+    pub title: String,
+    pub description: String,
+    pub kind: AchievementKind,
+    /// `EARNED`/`IN_PROGRESS` for platform achievements; the mint status for
+    /// on-chain ones.
     pub status: String,
-    pub verification_reference: String,
+    pub progress: i32,
+    pub threshold: i32,
+    pub earned: bool,
+    /// Opaque on-chain reference; absent for platform achievements.
+    pub verification_reference: Option<String>,
     pub wallet_address: Option<String>,
     pub mint_identifier: Option<String>,
     pub transaction_signature: Option<String>,
@@ -128,7 +146,7 @@ impl AchievementService {
         nonce: &str,
         signature: &str,
     ) -> AppResult<()> {
-        let (key_bytes, _chain) = wallet_public_key(wallet)?;
+        let (key_bytes, chain) = wallet_public_key(wallet)?;
         let nonce_hash = Sha256::digest(nonce.as_bytes());
         if !self
             .store
@@ -146,7 +164,7 @@ impl AchievementService {
         .map_err(|_| {
             AppError::Domain(DomainError::Validation("invalid wallet signature".into()))
         })?;
-        key.verify(message(wallet, nonce).as_bytes(), &sig)
+        key.verify(&signing_payload(chain, &message(wallet, nonce)), &sig)
             .map_err(|_| {
                 AppError::Domain(DomainError::Forbidden(
                     "wallet signature does not match address".into(),
@@ -155,8 +173,18 @@ impl AchievementService {
         self.store.set_wallet(user, wallet).await?;
         self.store.queue_eligible_for_wallet(user, wallet).await
     }
+    /// Every achievement for a user: the platform catalogue with live progress,
+    /// plus any on-chain achievement they have become eligible for.
     pub async fn mine(&self, user: Uuid) -> AppResult<Vec<Achievement>> {
-        self.store.list_for_user(user).await
+        let mut achievements = self.store.list_for_user(user).await?;
+        for achievement in &mut achievements {
+            // The explorer link belongs to the chain adapter, not the database.
+            achievement.explorer_url = achievement
+                .transaction_signature
+                .as_deref()
+                .and_then(|signature| self.chain.explorer_url(signature));
+        }
+        Ok(achievements)
     }
     /// Claims at most one durable outbox job. Verification ledger is never mutated here.
     pub async fn process_one(&self) -> AppResult<bool> {
@@ -179,6 +207,28 @@ impl AchievementService {
 }
 fn message(wallet: &str, nonce: &str) -> String {
     format!("EcoQuest wallet ownership\nwallet:{wallet}\nnonce:{nonce}")
+}
+
+/// SEP-53 domain separator. Stellar wallets prepend it so a signed message can
+/// never be replayed as a transaction.
+const SEP53_PREFIX: &[u8] = b"Stellar Signed Message:\n";
+
+/// The bytes a wallet on `chain` actually puts through Ed25519, which is not
+/// the same on both chains.
+///
+/// Stellar wallets implement SEP-53: they sign `SHA-256(prefix || message)`,
+/// never the message itself. Solana's `signMessage` signs the raw message
+/// bytes. Verifying the raw bytes for both makes every Freighter link fail
+/// with a signature mismatch.
+fn signing_payload(chain: Chain, message: &str) -> Vec<u8> {
+    match chain {
+        Chain::Solana => message.as_bytes().to_vec(),
+        Chain::Stellar => Sha256::new()
+            .chain_update(SEP53_PREFIX)
+            .chain_update(message.as_bytes())
+            .finalize()
+            .to_vec(),
+    }
 }
 fn invalid_wallet() -> AppError {
     AppError::Domain(DomainError::Validation(
@@ -328,6 +378,42 @@ mod tests {
         assert_eq!(wallet_public_key(&stellar).unwrap(), (key, Chain::Stellar));
         let solana = bs58::encode(key).into_string();
         assert_eq!(wallet_public_key(&solana).unwrap(), (key, Chain::Solana));
+    }
+
+    /// Published SEP-53 test vector (ecosystem/sep-0053.md, "Sign a simple
+    /// ASCII message"). Signing the raw message instead of the prefixed hash
+    /// is exactly the mistake that made every Freighter link fail, so this
+    /// pins the payload against the spec rather than against ourselves.
+    #[test]
+    fn stellar_payload_matches_the_sep53_test_vector() {
+        const ADDRESS: &str = "GBXFXNDLV4LSWA4VB7YIL5GBD7BVNR22SGBTDKMO2SBZZHDXSKZYCP7L";
+        const SIGNATURE: &str = "fO5dbYhXUhBMhe6kId/cuVq/AfEnHRHEvsP8vXh03M1uLpi5e46yO2Q8rEBzu3feXQewcQE5GArp88u6ePK6BA==";
+        let (key, chain) = wallet_public_key(ADDRESS).unwrap();
+        assert_eq!(chain, Chain::Stellar);
+        let key = VerifyingKey::from_bytes(&key).unwrap();
+        let sig = Signature::from_slice(&STANDARD.decode(SIGNATURE).unwrap()).unwrap();
+
+        assert!(
+            key.verify(&signing_payload(Chain::Stellar, "Hello, World!"), &sig)
+                .is_ok(),
+            "SEP-53 payload rejected a signature the spec says is valid"
+        );
+        // The pre-fix behaviour: raw message bytes must not verify.
+        assert!(
+            key.verify(b"Hello, World!", &sig).is_err(),
+            "raw message bytes must not verify a SEP-53 signature"
+        );
+    }
+
+    /// Solana wallets sign the message itself, so the two chains must not
+    /// share a payload.
+    #[test]
+    fn solana_signs_the_raw_message() {
+        assert_eq!(signing_payload(Chain::Solana, "hi"), b"hi".to_vec());
+        assert_ne!(
+            signing_payload(Chain::Stellar, "hi"),
+            signing_payload(Chain::Solana, "hi")
+        );
     }
 
     #[test]

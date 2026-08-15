@@ -7,10 +7,13 @@ use uuid::Uuid;
 use super::models::{
     Activity, CreateEventCommand, Event, EventQrToken, Participation, UpdateEventCommand,
 };
-use crate::AppResult;
+use crate::{impact::ImpactMetric, AppResult};
 
 #[async_trait::async_trait]
 pub trait EventStore: Send + Sync {
+    /// The impact metric vocabulary an event's declared impacts are checked
+    /// against. Free-text metrics split totals and evade the community goal.
+    async fn list_impact_metrics(&self) -> AppResult<Vec<ImpactMetric>>;
     /// Whether `user_id` owns `organization_id`.
     async fn is_organization_owner(&self, organization_id: Uuid, user_id: Uuid) -> AppResult<bool>;
     /// Review status of an organization, if it exists.
@@ -25,6 +28,9 @@ pub trait EventStore: Send + Sync {
         command: UpdateEventCommand,
     ) -> AppResult<Option<Event>>;
     async fn find_event(&self, event_id: Uuid) -> AppResult<Option<Event>>;
+    /// Missions open to players: published *and* already-running events that
+    /// have not ended. A mission that is under way is still discoverable, so a
+    /// player can find it, join, and check in on the day.
     async fn list_published_events(&self, now: DateTime<Utc>) -> AppResult<Vec<Event>>;
     /// Lists every event for an organization regardless of status.
     async fn list_organization_events(&self, organization_id: Uuid) -> AppResult<Vec<Event>>;
@@ -60,6 +66,12 @@ pub trait EventStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> AppResult<Option<Participation>>;
     async fn list_participants(&self, event_id: Uuid) -> AppResult<Vec<Participation>>;
+    /// The caller's own registration for an event, used to explain a refused check-in.
+    async fn find_participation_for_user(
+        &self,
+        event_id: Uuid,
+        user_id: Uuid,
+    ) -> AppResult<Option<Participation>>;
     /// Lists the user's registrations joined with their events.
     async fn list_my_activities(&self, user_id: Uuid) -> AppResult<Vec<Activity>>;
     async fn find_participation(&self, participation_id: Uuid) -> AppResult<Option<Participation>>;

@@ -7,13 +7,14 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/Table';
-import { EmptyState, ErrorNote, LoadingState } from '../../components/ui/EmptyState';
+import { EmptyState, LoadingState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { adminListPath, defaultAdminQuery, type AdminQuery } from '../../lib/adminQuery';
 import { patch } from '../../lib/api';
 import { statusLabel, verificationToneOf } from '../../lib/format';
 import type { AdminOrganization, Page, VerificationStatus } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
+import { useNotice } from '../../lib/useNotice';
 
 type Action = { org: AdminOrganization; status: VerificationStatus; label: string; destructive?: boolean };
 
@@ -45,21 +46,21 @@ export function AdminOrganizationsPage() {
   const [query, setQuery] = useState<AdminQuery>(defaultAdminQuery());
   const path = useMemo(() => adminListPath('/api/admin/organizations', query), [query]);
   const { data, error, loading, reload } = useFetch<Page<AdminOrganization>>(path, path);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { notice, clear, succeed, fail } = useNotice();
   const [action, setAction] = useState<Action | null>(null);
   const [busy, setBusy] = useState(false);
 
   const review = async (reason: string) => {
     if (!action) return;
-    setNotice(null);
+    clear();
     setBusy(true);
     try {
       await patch(`/api/admin/organizations/${action.org.id}/status`, { status: action.status, reason });
-      setNotice(`“${action.org.name}” is now ${statusLabel(action.status).toLowerCase()}.`);
+      succeed(`“${action.org.name}” is now ${statusLabel(action.status).toLowerCase()}.`);
       setAction(null);
       await reload();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Review action failed.');
+      fail(err, 'Review action failed.');
     } finally {
       setBusy(false);
     }
@@ -74,7 +75,7 @@ export function AdminOrganizationsPage() {
         title="Organizations"
         detail="Search, review, suspend, and reactivate organizations. Every change needs a reason."
       />
-      {notice && <div className="mb-4"><ErrorNote message={notice} /></div>}
+      {notice && <div className="mb-4"><Notice tone={notice.tone} message={notice.message} /></div>}
       <AdminToolbar
         query={query}
         onChange={setQuery}

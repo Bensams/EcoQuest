@@ -2,7 +2,7 @@
 use crate::PgStore;
 use chrono::{DateTime, Utc};
 use ecoquest_application::{
-    achievements::{Achievement, AchievementStore, MintJob, MintResult},
+    achievements::{Achievement, AchievementKind, AchievementStore, MintJob, MintResult},
     AppError, AppResult,
 };
 use ecoquest_domain::DomainError;
@@ -62,8 +62,79 @@ impl AchievementStore for PgAchievementStore {
             Err(e) => Err(err(e)),
         }
     }
+    /// The platform catalogue joined with the user's live counters, followed by
+    /// their on-chain achievements. Catalogue rows are always returned, earned
+    /// or not, so the page can show progress towards the next tier.
     async fn list_for_user(&self, u: Uuid) -> AppResult<Vec<Achievement>> {
-        sqlx::query("SELECT achievement_key,status::text status,verification_reference,wallet_address,mint_identifier,transaction_signature FROM blockchain_achievements WHERE user_id=$1 ORDER BY created_at").bind(u).fetch_all(&self.pool).await.map_err(err)?.iter().map(|r|Ok(Achievement { achievement_key:r.try_get("achievement_key").map_err(err)?,status:r.try_get("status").map_err(err)?,verification_reference:r.try_get("verification_reference").map_err(err)?,wallet_address:r.try_get("wallet_address").map_err(err)?,mint_identifier:r.try_get("mint_identifier").map_err(err)?,transaction_signature:r.try_get("transaction_signature").map_err(err)?,explorer_url:None })).collect()
+        let platform = sqlx::query(
+            "SELECT c.achievement_key,c.title,c.description,c.threshold,COALESCE(p.progress,0) AS progress \
+             FROM achievement_catalog c \
+             LEFT JOIN achievement_progress p ON p.user_id=$1 AND p.achievement_key=c.metric \
+             ORDER BY c.sort_order",
+        )
+        .bind(u)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(err)?;
+
+        let mut achievements = platform
+            .iter()
+            .map(|r| {
+                let progress: i32 = r.try_get("progress").map_err(err)?;
+                let threshold: i32 = r.try_get("threshold").map_err(err)?;
+                let earned = progress >= threshold;
+                Ok(Achievement {
+                    achievement_key: r.try_get("achievement_key").map_err(err)?,
+                    title: r.try_get("title").map_err(err)?,
+                    description: r.try_get("description").map_err(err)?,
+                    kind: AchievementKind::Platform,
+                    status: if earned { "EARNED" } else { "IN_PROGRESS" }.into(),
+                    // Capped so the UI never renders "7 / 5".
+                    progress: progress.min(threshold),
+                    threshold,
+                    earned,
+                    verification_reference: None,
+                    wallet_address: None,
+                    mint_identifier: None,
+                    transaction_signature: None,
+                    explorer_url: None,
+                })
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+
+        let onchain = sqlx::query(
+            "SELECT a.achievement_key,d.title,d.description,a.status::text AS status,a.verification_reference,\
+             a.wallet_address,a.mint_identifier,a.transaction_signature \
+             FROM blockchain_achievements a JOIN achievement_definitions d USING (achievement_key) \
+             WHERE a.user_id=$1 ORDER BY a.created_at",
+        )
+        .bind(u)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(err)?;
+
+        for r in &onchain {
+            let status: String = r.try_get("status").map_err(err)?;
+            // Eligibility is the achievement; minting is only how it is
+            // published, so anything past NOT_ELIGIBLE counts as earned.
+            let earned = status != "NOT_ELIGIBLE";
+            achievements.push(Achievement {
+                achievement_key: r.try_get("achievement_key").map_err(err)?,
+                title: r.try_get("title").map_err(err)?,
+                description: r.try_get("description").map_err(err)?,
+                kind: AchievementKind::Onchain,
+                status,
+                progress: i32::from(earned),
+                threshold: 1,
+                earned,
+                verification_reference: r.try_get("verification_reference").map_err(err)?,
+                wallet_address: r.try_get("wallet_address").map_err(err)?,
+                mint_identifier: r.try_get("mint_identifier").map_err(err)?,
+                transaction_signature: r.try_get("transaction_signature").map_err(err)?,
+                explorer_url: None,
+            });
+        }
+        Ok(achievements)
     }
     async fn queue_eligible_for_wallet(&self, u: Uuid, w: &str) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(err)?;

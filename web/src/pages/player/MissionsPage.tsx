@@ -116,7 +116,12 @@ export function MissionsPage() {
           <Card key={event.id} className="flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">
               <h2 className="text-base font-semibold text-forest">{event.name}</h2>
-              <Badge tone={statusToneOf(event.status)}>{activityLabel(event.activity_type)}</Badge>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                {/* Discovery now includes missions already under way; say so,
+                    since those are the only ones you can check in to. */}
+                {event.status === 'ACTIVE' && <Badge tone="success">Happening now</Badge>}
+                <Badge tone={statusToneOf(event.status)}>{activityLabel(event.activity_type)}</Badge>
+              </div>
             </div>
             <p className="flex items-center gap-1.5 text-sm text-forest-muted">
               <MapPin className="size-4" aria-hidden="true" />

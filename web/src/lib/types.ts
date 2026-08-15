@@ -11,14 +11,15 @@ export type UserProfile = {
   created_at: string;
 };
 
-export type ImpactMetric = { metric: string; unit: string; value: number };
+/** A summed total for one metric. Mirrors the API's `MetricTotal`. */
+export type MetricTotal = { metric: string; unit: string; value: number };
 
 export type ImpactStats = {
   verified_activities: number;
   active_participants: number;
   approved_organizations: number;
   certificates_issued: number;
-  metrics: ImpactMetric[];
+  metrics: MetricTotal[];
 };
 
 export type CommunityGoal = {
@@ -30,6 +31,14 @@ export type CommunityGoal = {
 };
 
 export type EventImpact = { metric: string; unit: string; expected_value: number };
+
+/** One entry of the controlled impact vocabulary, from `/api/impact/metrics`. */
+export type ImpactMetric = {
+  metric: string;
+  label: string;
+  unit: string;
+  max_per_participant: number;
+};
 
 export type EventStatus =
   | 'DRAFT'
@@ -108,10 +117,19 @@ export type Activity = {
   event: EcoEvent;
 };
 
+export type AchievementKind = 'PLATFORM' | 'ONCHAIN';
+
 export type Achievement = {
   achievement_key: string;
+  title: string;
+  description: string;
+  kind: AchievementKind;
+  /** `EARNED`/`IN_PROGRESS` for platform achievements, the mint status for on-chain ones. */
   status: string;
-  verification_reference: string;
+  progress: number;
+  threshold: number;
+  earned: boolean;
+  verification_reference: string | null;
   wallet_address: string | null;
   mint_identifier: string | null;
   transaction_signature: string | null;

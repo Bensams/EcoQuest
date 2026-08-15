@@ -38,6 +38,12 @@ async function connectFreighter(): Promise<WalletHandle> {
     sign: async (text: string) => {
       const signed = await signMessage(text, { address });
       if (signed.error) throw new Error(signed.error);
+      // Freighter signs with whichever account is active, which may no longer
+      // be the one we asked for. Catch it here rather than letting the server
+      // reject the signature with an unexplained mismatch.
+      if (signed.signerAddress && signed.signerAddress !== address) {
+        throw new Error('Freighter signed with a different account. Switch back and try again.');
+      }
       if (typeof signed.signedMessage === 'string') return signed.signedMessage;
       if (signed.signedMessage) return toBase64(signed.signedMessage as unknown as Uint8Array);
       throw new Error('Freighter did not return a signature.');

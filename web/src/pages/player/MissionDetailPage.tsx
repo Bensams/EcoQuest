@@ -4,7 +4,7 @@ import { ArrowLeft, CalendarDays, MapPin } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { EmptyState } from '../../components/ui/EmptyState';
+import { EmptyState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
 import {
@@ -16,12 +16,13 @@ import {
 } from '../../lib/format';
 import type { Activity, EcoEvent } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
+import { useNotice } from '../../lib/useNotice';
 
 export function MissionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: event, loading, error, reload } = useFetch<EcoEvent>(`/api/events/${id}`);
   const [joining, setJoining] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const { notice, succeed, fail } = useNotice();
   // The event payload carries no per-caller state, so the caller's own
   // participation is read from their activity list.
   const { data: activities, reload: reloadActivities } = useFetch<Activity[]>('/api/me/activities');
@@ -32,13 +33,16 @@ export function MissionDetailPage() {
   const join = async () => {
     if (!event) return;
     setJoining(true);
-    setResult(null);
     try {
       await post(`/api/events/${event.id}/join`, {});
-      setResult('Joined. You will be able to check in when the event is active.');
+      succeed(
+        event.status === 'ACTIVE'
+          ? 'Joined. This mission is under way — scan the organizer’s QR code to check in.'
+          : 'Joined. You will be able to check in once the organizer starts the mission.',
+      );
       await Promise.all([reload(), reloadActivities()]);
     } catch (err) {
-      setResult(err instanceof Error ? err.message : 'Could not join this mission.');
+      fail(err, 'Could not join this mission.');
       // A 409 means someone already joined in another tab; resync so the
       // button reflects reality instead of inviting a second attempt.
       await reloadActivities();
@@ -49,6 +53,12 @@ export function MissionDetailPage() {
 
   if (loading) return <p className="text-sm text-forest-muted">Loading mission…</p>;
   if (error || !event) return <EmptyState title="Mission not found" detail={error ?? undefined} />;
+
+  // Mirrors the API: registration closes when the mission ends, not when it
+  // starts, so a volunteer can still sign up on site and check in.
+  const isOpenToJoin =
+    (event.status === 'PUBLISHED' || event.status === 'ACTIVE') &&
+    new Date(event.ends_at).getTime() > Date.now();
 
   return (
     <div>
@@ -103,7 +113,7 @@ export function MissionDetailPage() {
                 </Badge>
               </p>
             </div>
-          ) : event.status !== 'PUBLISHED' ? (
+          ) : !isOpenToJoin ? (
             <p className="text-center text-sm text-forest-muted">This mission is not open for sign-ups.</p>
           ) : event.registered_count >= event.capacity ? (
             <Button disabled className="w-full">
@@ -114,7 +124,7 @@ export function MissionDetailPage() {
               {joining ? 'Joining…' : 'Join mission'}
             </Button>
           )}
-          {result && <p className="mt-3 rounded-lg bg-sage-soft px-3 py-2 text-sm text-forest">{result}</p>}
+          {notice && <div className="mt-3"><Notice tone={notice.tone} message={notice.message} /></div>}
           {event.impacts.length > 0 && (
             <div className="mt-5 border-t border-sage pt-4">
               <h3 className="mb-2 text-sm font-semibold text-forest">Expected impact</h3>

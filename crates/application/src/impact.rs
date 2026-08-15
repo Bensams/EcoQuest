@@ -17,6 +17,18 @@ pub struct ImpactStats {
     pub certificates_issued: i64,
     pub metrics: Vec<MetricTotal>,
 }
+/// One entry of the controlled vocabulary organizers pick from. `unit` is the
+/// only unit this metric is ever recorded in, so totals cannot split across
+/// spellings, and `max_per_participant` bounds what a single organizer can
+/// declare for one volunteer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImpactMetric {
+    pub metric: String,
+    pub label: String,
+    pub unit: String,
+    pub max_per_participant: f64,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CommunityGoal {
     pub name: String,
@@ -32,6 +44,8 @@ pub trait ImpactStore: Send + Sync {
     async fn organization_stats(&self, organization_id: Uuid) -> AppResult<ImpactStats>;
     async fn player_stats(&self, user_id: Uuid) -> AppResult<ImpactStats>;
     async fn community_goal(&self) -> AppResult<CommunityGoal>;
+    /// The metric vocabulary, for populating the organizer's event form.
+    async fn list_metrics(&self) -> AppResult<Vec<ImpactMetric>>;
 }
 #[derive(Clone)]
 pub struct ImpactService {
@@ -53,6 +67,9 @@ impl ImpactService {
     }
     pub async fn goal(&self) -> AppResult<CommunityGoal> {
         self.store.community_goal().await
+    }
+    pub async fn metrics(&self) -> AppResult<Vec<ImpactMetric>> {
+        self.store.list_metrics().await
     }
 }
 

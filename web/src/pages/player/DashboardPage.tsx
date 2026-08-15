@@ -50,15 +50,54 @@ function useRestorationGame(points: number): GameState | null {
   return state;
 }
 
-function RestorationScene({ stage }: { stage: number }) {
-  const scenes = ['Polluted', 'Cleanup started', 'Recovering', 'Healthy ecosystem'];
+const STAGE_LABELS = ['Polluted', 'Cleanup started', 'Recovering', 'Healthy ecosystem'];
+const STAGE_ART = ['scene-0-polluted', 'scene-1-cleanup', 'scene-2-recovering', 'scene-3-healthy'];
+// Keyed off the strings the WASM module returns, so a new tier there surfaces
+// here as a missing image rather than silently showing the wrong biome.
+const ENVIRONMENT_ART: Record<string, string> = {
+  Coast: 'environment-coast',
+  Ocean: 'environment-ocean',
+  Forest: 'environment-forest',
+  'Global Explorer': 'environment-global',
+};
+const CHARACTER_ART: Record<string, string> = {
+  Beginner: 'character-beginner',
+  Turtle: 'character-turtle',
+  'Eco Guardian': 'character-guardian',
+};
+
+function Caption({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative min-h-24 overflow-hidden rounded-lg bg-sky-100 p-4 text-2xl">
-      <span className="absolute right-3 top-2" aria-hidden="true">☀</span>
-      <span className="absolute bottom-3 left-1/2 -translate-x-1/2" aria-hidden="true">
-        {stage === 3 ? '🌳 🐟 🦋' : stage === 2 ? '🌱 🐟' : stage === 1 ? '🗑️ 🌱' : '🗑️ 🛢️'}
-      </span>
-      <p className="absolute bottom-1 right-3 text-xs font-medium text-forest-muted">{scenes[stage]}</p>
+    <span className="absolute bottom-2 left-2 rounded-full bg-white/85 px-2.5 py-0.5 text-xs font-medium text-forest">
+      {children}
+    </span>
+  );
+}
+
+/** The restoration scene for the current stage, beside the animated biome. */
+function RestorationScene({ stage, environment }: { stage: number; environment: string }) {
+  const scene = STAGE_ART[stage] ?? STAGE_ART[0];
+  const biome = ENVIRONMENT_ART[environment];
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="relative overflow-hidden rounded-lg sm:col-span-2">
+        <img
+          src={`/art/${scene}.webp`}
+          alt={`Your coastline: ${STAGE_LABELS[stage] ?? STAGE_LABELS[0]}`}
+          className="h-40 w-full object-cover"
+        />
+        <Caption>{STAGE_LABELS[stage] ?? STAGE_LABELS[0]}</Caption>
+      </div>
+      {biome && (
+        <div className="relative overflow-hidden rounded-lg">
+          {/* Readers who ask for less motion get the still frame instead of the loop. */}
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcSet={`/art/${biome}.webp`} />
+            <img src={`/art/${biome}.gif`} alt={environment} className="h-40 w-full object-cover" />
+          </picture>
+          <Caption>{environment}</Caption>
+        </div>
+      )}
     </div>
   );
 }
@@ -75,7 +114,10 @@ export function DashboardPage() {
     (a) => a.participation.status === 'REGISTERED' || a.participation.status === 'PENDING_VERIFICATION'
   ) ?? [];
   const pendingVerification = activities?.filter((a) => a.participation.status === 'PENDING_VERIFICATION') ?? [];
-  const recentAchievements = achievements?.slice(0, 3) ?? [];
+  // Earned first, so the card never leads with achievements still at 0.
+  const recentAchievements = [...(achievements ?? [])]
+    .sort((a, b) => Number(b.earned) - Number(a.earned))
+    .slice(0, 3);
 
   return (
     <div>
@@ -97,22 +139,31 @@ export function DashboardPage() {
 
       {game && (
         <Card className="mb-8">
-          <RestorationScene stage={game.restoration_stage} />
-          <div className="mt-4">
-            <p className="mb-1 text-sm text-forest-muted">
-              {game.character} · {game.environment} · {game.progress_points} pts
-            </p>
-            <div className="h-2 overflow-hidden rounded-full bg-sage-soft">
-              <div
-                className="h-full rounded-full bg-leaf"
-                style={{
-                  width: `${Math.min(100, (game.progress_points / (game.progress_points + game.points_to_next_level || 1)) * 100)}%`,
-                }}
+          <RestorationScene stage={game.restoration_stage} environment={game.environment} />
+          <div className="mt-4 flex items-center gap-3">
+            {CHARACTER_ART[game.character] && (
+              <img
+                src={`/art/${CHARACTER_ART[game.character]}.webp`}
+                alt={game.character}
+                className="size-14 shrink-0 rounded-full object-cover ring-1 ring-sage-soft"
               />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="mb-1 text-sm text-forest-muted">
+                {game.character} · {game.environment} · {game.progress_points} pts
+              </p>
+              <div className="h-2 overflow-hidden rounded-full bg-sage-soft">
+                <div
+                  className="h-full rounded-full bg-leaf"
+                  style={{
+                    width: `${Math.min(100, (game.progress_points / (game.progress_points + game.points_to_next_level || 1)) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-forest-muted">
+                {game.points_to_next_level ? `${game.points_to_next_level} points to next level` : 'Maximum level reached'}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-forest-muted">
-              {game.points_to_next_level ? `${game.points_to_next_level} points to next level` : 'Maximum level reached'}
-            </p>
           </div>
         </Card>
       )}
@@ -178,9 +229,11 @@ export function DashboardPage() {
           ) : (
             <ul className="space-y-3">
               {recentAchievements.map((ach) => (
-                <li key={ach.achievement_key} className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-forest">{ach.achievement_key.replace(/_/g, ' ')}</span>
-                  <Badge tone={ach.status.includes('ELIGIBLE') || ach.status.includes('MINTED') ? 'success' : 'muted'}>{ach.status}</Badge>
+                <li key={`${ach.kind}-${ach.achievement_key}`} className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-forest">{ach.title || ach.achievement_key.replace(/_/g, ' ')}</span>
+                  <Badge tone={ach.earned ? 'success' : 'muted'}>
+                    {ach.earned ? 'Earned' : `${ach.progress} / ${ach.threshold}`}
+                  </Badge>
                 </li>
               ))}
             </ul>

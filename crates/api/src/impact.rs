@@ -16,6 +16,14 @@ pub fn routes() -> Router<AppState> {
             get(organization),
         )
         .route("/api/impact/me", get(player))
+        .route("/api/impact/metrics", get(metrics))
+}
+/// The metric vocabulary an organizer picks from. Public: it is a fixed list
+/// with no user data, and the mission pages label metrics from it.
+async fn metrics(
+    State(s): State<AppState>,
+) -> Result<Json<Vec<ecoquest_application::impact::ImpactMetric>>, ApiError> {
+    Ok(Json(s.impact_service()?.metrics().await?))
 }
 async fn platform(
     State(s): State<AppState>,

@@ -5,18 +5,19 @@ import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Dialog } from '../../components/ui/Dialog';
 import { DataTable } from '../../components/ui/Table';
-import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
+import { EmptyState, Notice } from '../../components/ui/EmptyState';
 import { Field, TextArea } from '../../components/ui/Field';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
 import { activityLabel, eventStatusTone, formatDateTime } from '../../lib/format';
 import type { AdminEvent, Page } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
+import { useNotice } from '../../lib/useNotice';
 
 export function AdminEventsPage() {
   const { data, error, loading, reload } = useFetch<Page<AdminEvent>>('/api/admin/events');
   const events = data?.items ?? [];
-  const [notice, setNotice] = useState<string | null>(null);
+  const { notice, clear, succeed, fail } = useNotice();
   const [target, setTarget] = useState<AdminEvent | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,16 +30,16 @@ export function AdminEventsPage() {
 
   const cancelEvent = async () => {
     if (!target) return;
-    setNotice(null);
+    clear();
     setBusy(true);
     try {
       await post(`/api/admin/events/${target.id}/cancel`, { reason: reason.trim() });
-      setNotice(`“${target.name}” was cancelled.`);
+      succeed(`“${target.name}” was cancelled. It is no longer joinable.`);
       setTarget(null);
       setReason('');
       await reload();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not cancel the event.');
+      fail(err, 'Could not cancel the event.');
     } finally {
       setBusy(false);
     }
@@ -51,7 +52,7 @@ export function AdminEventsPage() {
         title="Events"
         detail="Moderation overview. Cancel an event that should not run."
       />
-      {notice && <div className="mb-4"><ErrorNote message={notice} /></div>}
+      {notice && <div className="mb-4"><Notice tone={notice.tone} message={notice.message} /></div>}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading && <p className="mb-4 text-sm text-forest-muted">Loading events…</p>}
 

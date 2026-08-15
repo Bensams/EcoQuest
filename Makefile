@@ -1,4 +1,4 @@
-.PHONY: help setup db-up db-down db-logs api cli-health migrate seed reset demo-reset demo fmt fmt-check lint test build web-install web-dev web-lint web-build ci
+.PHONY: help setup db-up db-down db-logs api cli-health migrate seed reset demo-reset demo verify-flow fmt fmt-check lint test build web-install web-dev web-lint web-build ci
 
 help:
 	@echo "setup      - copy .env.example to .env and install web deps"
@@ -9,6 +9,7 @@ help:
 	@echo "migrate    - apply pending database migrations"
 	@echo "seed       - create accounts and load the full demo dataset"
 	@echo "reset      - wipe all data (drop schema), migrate and re-seed"
+	@echo "verify-flow - walk the whole user flow against a running API"
 	@echo "fmt/lint/test/build - Rust checks"
 	@echo "web-dev/web-lint/web-build - frontend tasks"
 	@echo "ci         - everything CI runs"
@@ -27,7 +28,7 @@ db-logs:
 	docker compose logs -f postgres
 
 api:
-	cargo run -p ecoquest-api
+	cargo run -p ecoquest-api --bin ecoquest-api
 
 cli-health:
 	cargo run -p ecoquest-cli -- health
@@ -55,6 +56,11 @@ demo-reset:
 
 demo:
 	APP_ENV=development powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
+
+# End-to-end acceptance walk of the documented user flow. Requires a running
+# API and database; development/test only (it grants ADMIN via the database).
+verify-flow:
+	bash scripts/verify-user-flow.sh
 
 fmt:
 	cargo fmt --all

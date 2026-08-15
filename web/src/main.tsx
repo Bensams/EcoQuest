@@ -6,6 +6,8 @@ import { AuthProvider } from './lib/auth';
 import { AppShell } from './components/layout/AppShell';
 import { ProtectedRoute } from './router/guards';
 import { LoginPage, RegisterPage } from './pages/auth/AuthPages';
+import { VerifyCertificatePage } from './pages/public/VerifyCertificatePage';
+import { NotFoundPage } from './pages/public/NotFoundPage';
 import { DashboardPage } from './pages/player/DashboardPage';
 import { MissionsPage } from './pages/player/MissionsPage';
 import { MissionDetailPage } from './pages/player/MissionDetailPage';
@@ -31,6 +33,10 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+
+      {/* Public on purpose: a third party verifies a certificate with only the
+          hash printed on it, without an EcoQuest account. */}
+      <Route path="/certificates/verify/:hash" element={<VerifyCertificatePage />} />
 
       <Route
         element={
@@ -88,7 +94,9 @@ function AppRoutes() {
         />
       </Route>
 
-      <Route path="*" element={<Navigate to="/app/missions" replace />} />
+      {/* A terminal 404, not a redirect: silently sending unknown URLs to the
+          missions list made a broken link look like a working one. */}
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

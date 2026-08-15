@@ -5,12 +5,13 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { DataTable } from '../../components/ui/Table';
 import { Card } from '../../components/ui/Card';
-import { EmptyState, ErrorNote } from '../../components/ui/EmptyState';
+import { EmptyState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
 import { activityLabel, formatDateRange, participationStatusTone, statusToneOf } from '../../lib/format';
 import type { EcoEvent, Participation, QrResponse, VerificationBatchResponse } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
+import { useNotice } from '../../lib/useNotice';
 
 export function OrgEventDetailPage() {
   const { organizationId, eventId } = useParams<{ organizationId: string; eventId: string }>();
@@ -20,40 +21,46 @@ export function OrgEventDetailPage() {
     eventId,
   );
   const [qr, setQr] = useState<QrResponse | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { notice, clear, succeed, fail } = useNotice();
   const [busy, setBusy] = useState<string | null>(null);
 
   if (!eventId || !organizationId) return <EmptyState title="Missing event" />;
   if (error || !event) return <EmptyState title="Event not found" detail={error ?? undefined} />;
 
   const verify = async (participationId: string, action: 'verify' | 'reject') => {
-    setNotice(null);
+    clear();
     setBusy(participationId);
     try {
       const body = await post<VerificationBatchResponse>(`/api/events/${eventId}/participants/${action}`, {
         participation_ids: [participationId],
       });
       const result = body.results[0];
-      setNotice(
-        result
-          ? `${action === 'verify' ? 'Verified' : 'Rejected'} — +${result.points_awarded} pts, level ${result.player_level}.`
-          : `${action === 'verify' ? 'Verified' : 'Rejected'}.`,
+      // A rejection is a successful action too: it carries no points, so say so
+      // rather than reporting "+0 pts".
+      succeed(
+        action === 'reject'
+          ? 'Participation rejected. No points were awarded.'
+          : result
+            ? `Verified — +${result.points_awarded} pts, level ${result.player_level}.`
+            : 'Verified.',
       );
       await Promise.all([reload(), reloadParticipants()]);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Verification failed.');
+      fail(err, action === 'verify' ? 'Verification failed.' : 'Rejection failed.');
     } finally {
       setBusy(null);
     }
   };
 
   const rotate = async () => {
-    setNotice(null);
+    clear();
     setBusy('qr');
     try {
-      setQr(await post<QrResponse>(`/api/events/${eventId}/qr`, {}));
+      const next = await post<QrResponse>(`/api/events/${eventId}/qr`, {});
+      setQr(next);
+      succeed(`Check-in code ready. Valid until ${new Date(next.expires_at).toLocaleString()}.`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Could not generate the check-in code.');
+      fail(err, 'Could not generate the check-in code.');
     } finally {
       setBusy(null);
     }
@@ -74,7 +81,7 @@ export function OrgEventDetailPage() {
         <Badge tone={statusToneOf(event.status)}>{event.status}</Badge>
         <span className="text-xs text-forest-muted">{formatDateRange(event.starts_at, event.ends_at)}</span>
       </div>
-      {notice && <div className="mb-4"><ErrorNote message={notice} /></div>}
+      {notice && <div className="mb-4"><Notice tone={notice.tone} message={notice.message} /></div>}
       {event.status === 'ACTIVE' && (
         <div className="mb-6 grid gap-4 md:grid-cols-2">
           <Card>

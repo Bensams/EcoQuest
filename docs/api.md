@@ -29,21 +29,29 @@ The **Auth** column means: `no` = anonymous, `yes` = any signed-in user, `organi
 
 | Method | Path | Auth | Body / result |
 | --- | --- | --- | --- |
-| GET | `/api/events` | no | published events |
+| GET | `/api/events` | no | discoverable events: `PUBLISHED` and running `ACTIVE` ones that have not ended |
 | GET | `/api/events/{id}` | no | single event |
 | PUT | `/api/events/{id}` | organizer | updates a draft event |
 | POST | `/api/events/{id}/publish` | organizer | no body |
 | POST | `/api/events/{id}/activate` | organizer | no body |
 | POST | `/api/events/{id}/cancel` | organizer | no body |
-| POST | `/api/events/{id}/join` | yes | participation |
+| POST | `/api/events/{id}/join` | yes | participation; open while the event is `PUBLISHED` or `ACTIVE` and has not ended |
 | GET | `/api/events/{id}/participants` | organizer | roster with check-in and verification state |
-| POST | `/api/events/{id}/qr` | organizer | `{}`; opaque check-in code and SVG |
-| POST | `/api/check-in` | yes | `{"code":"..."}` |
+| POST | `/api/events/{id}/qr` | organizer | `{}`; opaque check-in code and SVG. The optional `activates_at`/`expires_at` window must overlap the event window, else 400 |
+| POST | `/api/check-in` | yes | `{"code":"..."}`; 409 carries the specific reason (mission not started, ended, not joined, already checked in) |
 | POST | `/api/events/{id}/participants/verify` | organizer | `{"participation_ids":["uuid"],"reason":"..."}` |
 | POST | `/api/events/{id}/participants/reject` | organizer | same body as verify |
 | GET | `/api/me/activities` | yes | caller participations across events |
 
 Event create body has `name`, `description`, `activity_type` (`BEACH_CLEANUP`), `location`, ISO-8601 `starts_at` / `ends_at`, `capacity`, `eco_points`, and `impacts: [{metric,unit,expected_value}]`.
+
+`impacts` are validated against the `impact_metrics` catalogue served by
+`GET /api/impact/metrics`, and each `expected_value` is what **one verified volunteer**
+contributes, never an event total. A 400 is returned when the metric is not in the
+catalogue, the unit is not that metric's canonical unit, the value exceeds the metric's
+`max_per_participant`, or a metric is listed twice. Impact aggregates group by
+`(metric, unit)` and the community goal matches on both, so free-text units would
+silently strand a mission's contribution instead of failing.
 
 ## Impact, certificates, and achievements
 
@@ -53,12 +61,23 @@ Event create body has `name`, `description`, `activity_type` (`BEACH_CLEANUP`), 
 | GET | `/api/impact/community-goal` | no | platform goal progress |
 | GET | `/api/impact/organizations/{organization_id}` | no | verified totals for one organization |
 | GET | `/api/impact/me` | yes | caller totals |
+| GET | `/api/impact/metrics` | no | the impact metric vocabulary an event may declare |
 | GET | `/api/certificates/me` | yes | caller certificates |
 | GET | `/api/certificates/participations/{participation_id}` | participant or organization member | issued certificate; 404 to anyone else |
 | GET | `/api/certificates/public/{verification_hash}` | no | public verification by 64-char lowercase hex hash |
-| GET | `/api/achievements/me` | yes | Ocean Guardian eligibility / mint state |
+| GET | `/api/achievements/me` | yes | every achievement for the caller (see below) |
 | POST | `/api/wallet/challenge` | yes | single-use nonce to sign |
 | POST | `/api/wallet/verify` | yes | Ed25519 proof; links a Stellar or Solana address |
+
+`/api/achievements/me` returns one flat list of two kinds, distinguished by `kind`:
+
+- `PLATFORM` — every row of `achievement_catalog`, earned or not, with `progress`/`threshold`
+  taken from the caller's `achievement_progress` counters (capped at the threshold) and
+  `status` of `EARNED` or `IN_PROGRESS`. Returned for all activity types.
+- `ONCHAIN` — rows the caller has become eligible for, carrying the mint `status`,
+  `verification_reference`, `wallet_address`, `mint_identifier`, `transaction_signature`,
+  and an `explorer_url` derived from the chain adapter. `earned` is true from eligibility
+  onward; minting only publishes it.
 
 ## Administration
 

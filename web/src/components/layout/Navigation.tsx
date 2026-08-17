@@ -5,7 +5,6 @@ import {
   CalendarClock,
   Home,
   Leaf,
-  LineChart,
   LogOut,
   Menu,
   QrCode,
@@ -26,7 +25,6 @@ const primaryNav = [
   { to: '/app/activities', label: 'My Activities', icon: Bell },
   { to: '/app/achievements', label: 'Achievements', icon: Award },
   { to: '/app/certificates', label: 'Certificates', icon: Leaf },
-  { to: '/app/impact', label: 'Impact', icon: LineChart },
   { to: '/app/check-in', label: 'Check-in', icon: QrCode },
   { to: '/app/profile', label: 'Profile', icon: User },
 ];

@@ -32,14 +32,6 @@ export type CommunityGoal = {
 
 export type EventImpact = { metric: string; unit: string; expected_value: number };
 
-/** One entry of the controlled impact vocabulary, from `/api/impact/metrics`. */
-export type ImpactMetric = {
-  metric: string;
-  label: string;
-  unit: string;
-  max_per_participant: number;
-};
-
 export type EventStatus =
   | 'DRAFT'
   | 'PUBLISHED'

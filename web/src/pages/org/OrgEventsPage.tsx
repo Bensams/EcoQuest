@@ -8,7 +8,7 @@ import { ErrorNote, EmptyState, Notice } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { post } from '../../lib/api';
 import { activityLabel, formatDateRange, statusToneOf } from '../../lib/format';
-import type { ActivityType, EcoEvent, ImpactMetric } from '../../lib/types';
+import type { ActivityType, EcoEvent } from '../../lib/types';
 import { useFetch } from '../../lib/useFetch';
 import { useNotice } from '../../lib/useNotice';
 
@@ -66,7 +66,7 @@ export function OrgEventsPage() {
       {!loading && events && events.length === 0 && (
         <EmptyState
           title="No events yet"
-          detail="Create your first event to start recruiting volunteers and tracking impact."
+          detail="Create your first event to start recruiting volunteers."
         />
       )}
 
@@ -137,24 +137,8 @@ function EventForm({
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Declared per verified volunteer, never a whole-event total. Rows are keyed
-  // by metric, which the API also requires to be unique within one event.
-  const [impacts, setImpacts] = useState<Array<{ metric: string; expected_value: string }>>([]);
-  const { data: catalog } = useFetch<ImpactMetric[]>('/api/impact/metrics');
 
   const set = (key: keyof typeof form) => (value: string) => setForm((f) => ({ ...f, [key]: value }));
-
-  const unused = (catalog ?? []).filter((m) => !impacts.some((i) => i.metric === m.metric));
-  const definitionOf = (metric: string) => catalog?.find((m) => m.metric === metric);
-
-  const addImpact = () => {
-    const next = unused[0];
-    if (next) setImpacts((rows) => [...rows, { metric: next.metric, expected_value: '' }]);
-  };
-  const setImpact = (index: number, patch: Partial<{ metric: string; expected_value: string }>) =>
-    setImpacts((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  const removeImpact = (index: number) =>
-    setImpacts((rows) => rows.filter((_, i) => i !== index));
 
   const submit = async () => {
     setError(null);
@@ -166,15 +150,6 @@ function EventForm({
         eco_points: Number(form.eco_points),
         starts_at: new Date(form.starts_at).toISOString(),
         ends_at: new Date(form.ends_at).toISOString(),
-        // The unit is never typed: it comes from the catalogue entry, so totals
-        // cannot split across spellings of the same measure.
-        impacts: impacts
-          .filter((row) => row.expected_value.trim() !== '')
-          .map((row) => ({
-            metric: row.metric,
-            unit: definitionOf(row.metric)?.unit ?? '',
-            expected_value: Number(row.expected_value),
-          })),
       });
       onCreated();
     } catch (err) {
@@ -205,61 +180,6 @@ function EventForm({
         <Field label="Ends at"><TextInput type="datetime-local" value={form.ends_at} onChange={(e) => set('ends_at')(e.target.value)} /></Field>
         <Field label="Capacity"><TextInput type="number" min={1} value={form.capacity} onChange={(e) => set('capacity')(e.target.value)} /></Field>
         <Field label="Eco points per volunteer"><TextInput type="number" min={0} value={form.eco_points} onChange={(e) => set('eco_points')(e.target.value)} /></Field>
-      </div>
-
-      <div className="mt-6 border-t border-sage pt-5">
-        <h3 className="text-sm font-medium text-forest">Expected impact</h3>
-        <p className="mb-3 text-xs text-forest-muted">
-          What one verified volunteer contributes — not the total for the whole event. Each
-          verified participant adds this much to the impact dashboard. Optional.
-        </p>
-
-        {impacts.length > 0 && (
-          <div className="mb-3 grid gap-2">
-            {impacts.map((row, index) => {
-              const definition = definitionOf(row.metric);
-              return (
-                <div key={row.metric} className="flex flex-wrap items-end gap-2">
-                  <label className="grid flex-1 gap-1.5 text-xs font-medium text-forest">
-                    <span className="sr-only">Metric</span>
-                    <select
-                      value={row.metric}
-                      onChange={(e) => setImpact(index, { metric: e.target.value })}
-                      className={inputClass}
-                      aria-label={`Impact metric ${index + 1}`}
-                    >
-                      {/* The row's own metric plus the ones not already used, so
-                          a metric can never be listed twice. */}
-                      {[definition, ...unused].filter(Boolean).map((m) => (
-                        <option key={m!.metric} value={m!.metric}>{m!.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="grid w-28 gap-1.5 text-xs font-medium text-forest">
-                    <span className="sr-only">Amount per volunteer</span>
-                    <TextInput
-                      type="number"
-                      min={0}
-                      max={definition?.max_per_participant}
-                      step="any"
-                      value={row.expected_value}
-                      onChange={(e) => setImpact(index, { expected_value: e.target.value })}
-                      aria-label={`Amount per volunteer for ${definition?.label ?? row.metric}`}
-                    />
-                  </label>
-                  <span className="pb-2 text-sm text-forest-muted">{definition?.unit}</span>
-                  <Button variant="ghost" size="sm" onClick={() => removeImpact(index)} className="mb-0.5">
-                    Remove
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <Button variant="secondary" size="sm" onClick={addImpact} disabled={unused.length === 0}>
-          <Plus className="size-3.5" aria-hidden="true" /> Add impact metric
-        </Button>
       </div>
 
       <div className="mt-5 flex justify-end gap-2">

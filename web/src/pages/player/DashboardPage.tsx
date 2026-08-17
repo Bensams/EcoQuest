@@ -241,12 +241,7 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-forest">Community goal</h2>
-            <ButtonLink to="/app/impact" variant="ghost" size="sm">
-              View progress <ArrowRight className="size-3.5" aria-hidden="true" />
-            </ButtonLink>
-          </div>
+          <h2 className="mb-4 text-base font-semibold text-forest">Community goal</h2>
           {goal ? (
             <>
               <p className="mb-2 text-sm text-forest-muted">{goal.name}</p>

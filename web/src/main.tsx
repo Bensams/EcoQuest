@@ -14,7 +14,6 @@ import { MissionDetailPage } from './pages/player/MissionDetailPage';
 import { MyActivitiesPage } from './pages/player/MyActivitiesPage';
 import { AchievementsPage } from './pages/player/AchievementsPage';
 import { CertificatesPage } from './pages/player/CertificatesPage';
-import { ImpactPage } from './pages/player/ImpactPage';
 import { ProfilePage } from './pages/player/ProfilePage';
 import { CheckInPage } from './pages/player/CheckInPage';
 import { WalletPage } from './pages/player/WalletPage';
@@ -52,7 +51,6 @@ function AppRoutes() {
         <Route path="/app/activities" element={<MyActivitiesPage />} />
         <Route path="/app/achievements" element={<AchievementsPage />} />
         <Route path="/app/certificates" element={<CertificatesPage />} />
-        <Route path="/app/impact" element={<ImpactPage />} />
         <Route path="/app/profile" element={<ProfilePage />} />
         <Route path="/app/check-in" element={<CheckInPage />} />
         <Route path="/app/wallet" element={<WalletPage />} />

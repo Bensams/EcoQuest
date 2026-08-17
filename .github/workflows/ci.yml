@@ -48,6 +48,11 @@ jobs:
       - run: npm install
       - run: npm run lint
       - run: npm run build
+      - name: Upload built wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-wasm
+          path: web/public/game/
       # web/public/game/ is committed so Vercel can build without Rust. The
       # build above regenerates it, so any diff means the committed copy no
       # longer matches crates/game-wasm and would ship stale behaviour.

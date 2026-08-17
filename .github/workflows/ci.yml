@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.89.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -36,7 +36,7 @@ jobs:
       # `npm run build` compiles crates/game-wasm first, so this job needs the
       # wasm target and a wasm-bindgen CLI matching the wasm-bindgen crate in
       # Cargo.lock. Mismatched versions fail the build with a schema error.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.89.0
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
